@@ -1,61 +1,111 @@
 # Lucarne library analysis (animation, memory, gaps)
 
-Repo: `C:\Users\Puparia\Documents\GitHub\Lucarne` (v0.1.x). Lovebox consumes Lucarne as Arduino library + Studio export headers.
+Repo: [Lucarne](https://github.com/Pupariaa/Lucarne) (v0.1.x). Lovebox consumes Lucarne as Arduino library + Studio export headers.
+
+**Recheck:** 2025-06-25 (cross-checked against `LucarneIconDraw.cpp`, `LucarneImageLoader.cpp`, `LucarneDisplay.cpp`, `LucarneUI.cpp`, `fluent-emojis.js`)
 
 ## Animation pipeline (current)
 
 ```
-Screen::draw()
-  └─ iconAnimSnapCapture()     // snapshot widget rect from framebuffer
-  └─ Icon::draw()              // frame 0 via iconAnimDrawInitial or SD draw
+Screen::draw()                          LucarneScreen.cpp
+  └─ iconAnimSnapCapture(g, ic)         // snap widget rect; snapEnsureReady all frames
+  └─ Icon::draw()                       // frame 0 via iconAnimDrawInitial
 
-UI::update() each loop
-  └─ iconAnimPatchScreen()     // if delay elapsed: blit ready OR restore+redraw
-       └─ display(x,y,w,h)     // partial SPI flush per icon
+UI::update() each loop                  LucarneUI.cpp
+  └─ iconAnimPatchScreen()              // per icon: blit ready OR slow path
+       └─ display(x,y,w,h)             // partial SPI flush PER icon (no batch yet)
 ```
 
-**Requirements for fast path:**
+### Fast path requirements
 
-- `BufferMode::Full` + `canPeekPixel()` + PSRAM/internal framebuffer
-- `snapEnsureReady()` succeeded (all `ready[i]` allocated)
-- SD frames in cache for `sdBuildDisplayFrame()`
+- `BufferMode::Full` + `canPeekPixel()` + framebuffer allocated
+- `snapEnsureReady()` succeeded — all `ready[i]` allocated at once (`LucarneIconDraw.cpp` L94–112)
+- SD frames in PSRAM cache for `sdBuildDisplayFrame()` (`LucarneImageLoader.cpp` L344+)
 - `_animLookup` registered (exported anim icons)
+
+### Slow path (when ready alloc fails)
+
+`iconAnimPatchScreen()` L248–256:
+
+1. `writeBufferRect` — restore snap underlay from `slot->buf`
+2. `drawAnimFrameFit` → SD read + CPU alpha blend into framebuffer
+3. `display(x,y,w,h)` — partial SPI flush
+
+No Serial log on failure (silent).
 
 ## Memory constants (code, not docs)
 
 | Pool | Size | File |
 |------|------|------|
-| Framebuffer | panelW×panelH×2 | `LucarneDisplay.cpp` |
-| SD cache cap | **2 MB** | `LucarneImageLoader.cpp` |
+| Framebuffer | panelW×panelH×2 (~131 KB @ 280×240) | `LucarneDisplay.cpp` |
+| SD cache cap | **2 MB** | `LucarneImageLoader.cpp` L20 |
 | SD slots | 32 | same |
-| Anim snap slots | **6 icons max** | `LucarneIconDraw.cpp` |
-| Per-icon snap | w×h×2 | same |
-| Per-icon ready[] | frameCount × w×h×2 | pre-allocated at once |
-| Transition temp | 2× full frames (peak) | `LucarneDisplay.cpp` |
+| Anim snap slots | **6 icons max** (`kMaxAnimSnaps`) | `LucarneIconDraw.cpp` L38 |
+| Per-icon snap | widget **w×h×2** (not iconDrawSizeFor) | `iconAnimSnapCapture` L268–297 |
+| Per-icon ready[] | frameCount × **w×h×2** | pre-allocated in `snapEnsureReady` |
+| Transition peak | 2× full frames via `allocFrame()` (~262 KB × 2) | `LucarneUI.cpp` L221–279 — **navigation only** |
+| Display line buffer | maxDim×2 internal DMA | `LucarneDisplay.cpp` when FB in PSRAM |
 
-**Documentation drift:** `docs/SD.md` and `docs/RUNTIME.md` still say 384 KB SD cache — **update Lucarne docs to 2 MB**.
+**Documentation drift (Lucarne repo):** `docs/SD.md` and `docs/RUNTIME.md` still say **384 KB** SD cache — code uses **2 MB**. Fix in Lucarne Phase 1.
+
+## PSRAM budget (Studio export)
+
+From `fluent-emojis.js`: `SIZE=32`, scale ×4 → 128 px typical; **`MAX_EXPORT_PX=160`**.
+
+| Widget | Ready ×12 | Snap | Total/icon |
+|--------|-----------|------|------------|
+| 128×128 | 384 KB | 32 KB | **416 KB** |
+| 160×160 | 614 KB | 51 KB | **665 KB** |
+
+SD cache slot footprint = **file resolution** (`aw×ah×2 + alpha`), not widget size. Composite scaling happens in `sdBuildDisplayFrame` CPU loop.
+
+### Multi-icon on N16R2 (2 MB PSRAM)
+
+| Items | Approx |
+|-------|--------|
+| Framebuffer | 131 KB |
+| 3× ready 128×128 | 1.25 MB |
+| SD cache (warm) | up to 2 MB cap — **competes** |
+| **Result** | `snapEnsureReady` fails → slow path ~1 fps |
+
+### Multi-icon on N16R8 (8 MB PSRAM)
+
+| Items | Approx |
+|-------|--------|
+| Framebuffer + 3× ready 128×128 + SD cache headroom | ~3–4 MB |
+| **Result** | fits with margin for WiFi buffers in PSRAM |
 
 ## Failure mode on N16R2 (why Lovebox feels ~1 fps)
 
-1. `snapEnsureReady()` allocates `frameCount` buffers immediately.
-2. 128×128 × 12 frames × 2 bytes ≈ 384 KB + 32 KB snap ≈ 416 KB per icon.
-3. SD cache grows toward 2 MB cap in PSRAM.
-4. Allocation fails → `buildAnimReady()` false → slow path:
-   - `writeBufferRect` (restore underlay)
-   - `drawImageAssetSd` or row streaming with SD seeks
-   - partial flush
-5. No Serial log on failure (silent).
+1. `snapEnsureReady()` allocates all `ready[i]` immediately (L105–110).
+2. Competes with 2 MB SD cache cap and 131 KB framebuffer in same PSRAM pool.
+3. Allocation fails → `buildAnimReady()` false every frame.
+4. Slow path: SD read + blend + per-icon SPI flush (~8–15 ms each @ 128×128).
+5. **`sdCacheWarmAnim()` exists (L317) but is never called from `iconAnimSnapCapture`** — cold SD on every composite even when alloc succeeds partially.
 
 ## Export pipeline (Studio → device)
 
 | Output | Role |
 |--------|------|
 | `Projet_icons.h` | Flash or SD path refs for anim/static icons |
-| `*.rgb565` + `*.alpha` on SD | Raw frames |
+| `*.rgb565` + `*.alpha` on SD | Raw frames at `exportPx` |
 | `Projet_setup.h` | SPI pins, `mountSdCard()` |
 | `ImageStorage::Web` | **Exported only — no firmware loader** |
 
-APNG → multi-frame via `fluent-emojis.js` / `export.js`.
+APNG 256×256 → rasterized via `fluent-emojis.js` / export.
+
+## Hot path detail: `buildAnimReady` + prefetch
+
+`iconAnimPatchScreen()` L248–262:
+
+- If `buildAnimReady(slot, anim, fi)` → `blitBufferRect` + `display()` — **fast**
+- Prefetches **next** frame: `buildAnimReady(slot, anim, ni)` — good design, useless if `ready[]` never allocated
+
+## Display flush bottleneck (secondary)
+
+PSRAM framebuffer → `_bufferDmaSafe=false` → row copy to internal `_lineBuf` before SPI (`LucarneDisplay.cpp` L449–456).
+
+Three anim icons × separate `display()` calls per `ui.update()` tick ≈ **24–45 ms** SPI overhead alone at 128×128.
 
 ## Gaps vs Lovebox product goals
 
@@ -63,66 +113,70 @@ APNG → multi-frame via `fluent-emojis.js` / `export.js`.
 |------|----------------|----------|
 | Multiple anim icons (3+) | Cap 6; memory bound on R2 | P0 hardware + P1 lazy alloc |
 | Fluid 128×128 emoji | Ready cache | P0 |
-| WiFi fetch emoji/image | Not implemented | P0 new module |
-| ≤2 s first display after download | Needs cache + format | P1 |
-| BLE + WiFi + anim | No guidance | P1 task pinning |
+| WiFi fetch emoji/image | Not implemented | P0 new module (Lovebox) |
+| ≤2 s first display after download | Needs cache + warm + ready | P1 |
+| BLE + WiFi + anim | No guidance in library | P1 task pinning (Lovebox) |
 | External W25Q256 | Not implemented | P2 |
-| `sdCacheWarmAnim()` | Never called from runtime | P0 one-line integration |
-| Flash/RLE anim fast path | Falls back to slow draw | P2 |
-| Batch partial flush | One SPI transaction per icon | P2 |
+| `sdCacheWarmAnim()` | **API exists, not wired to runtime** | **P0 one-line integration** |
+| Batch partial flush | One SPI transaction per icon | P1 |
+| Transition blocking | `delay(16)` in `runTransition` | P2 non-blocking transition |
 
 ## Recommended Lucarne changes (ordered)
 
 ### P0 — unlock Lovebox on N16R8
 
-1. **Lazy ready frames:** allocate `ready[i]` on first use; keep only current + next (+ LRU evict).
-2. **Memory budget API:** `setAnimCacheBudget(bytes)`, `setSdCacheMaxBytes(bytes)` — auto-scale to detected PSRAM.
-3. **Diagnostics:** Serial log when `snapEnsureReady` / `sdCacheLoadSlot` fails (once per boot per subsystem).
-4. **Warm cache:** call `sdCacheWarmAnim(anim, 0)` in `iconAnimSnapCapture` or `UI::navigate` for visible SD anims.
-5. **Web loader:** `LucarneAssetFetch.cpp` — HTTP GET → `/cache/{hash}` on SD → invalidate SD slot → warm cache.
-6. **Fix docs:** SD.md cache size, alpha sidecars.
+| # | Patch | File |
+|---|-------|------|
+| 1 | Call `sdCacheWarmAnim(anim, 0)` in `iconAnimSnapCapture` | `LucarneIconDraw.cpp` |
+| 2 | Lazy `ready[i]` — allocate current + next only; drop all-at-once prealloc | `LucarneIconDraw.cpp` |
+| 3 | `setSdCacheMaxBytes` / `setAnimReadyBudget` scaled to `ESP.getPsramSize()` | `LucarneImageLoader.cpp`, `LucarneIconDraw.cpp` |
+| 4 | Serial log once when `snapEnsureReady` / `sdCacheLoadSlot` fails | same |
+| 5 | Union dirty rect + single `display()` in `iconAnimPatchScreen` | `LucarneIconDraw.cpp` |
+| 6 | Fix docs 384 KB → 2 MB | `docs/SD.md`, `docs/RUNTIME.md` |
 
 ### P1 — product polish
 
-7. **Batch dirty rect** in `iconAnimPatchScreen` (union of icon rects → single flush).
-8. **Download manager task** on Core 0; queue jobs; UI reads only from cache.
-9. **Studio export:** optional pre-composited `.dframe` (BE16 widget-sized) for static backgrounds under icon.
-10. **`initStorage()`** in generated `Projet_setup.h` (dual SPI if configured).
+7. **Web loader:** HTTP GET → `/cache/` on SD → warm cache (Lovebox or Lucarne module).
+8. **Download manager** Core 0; UI Core 1 only touches display.
+9. Studio optional pre-composited `.dframe` (BE16 widget-sized).
+10. `initStorage()` in generated `Projet_setup.h` (dual SPI if configured).
 
 ### P2 — hardware options
 
 11. **SD_MMC backend** for ESP-IDF builds.
-12. **LittleFS on external flash** partition reader sharing `ImageStorage::Sd` path abstraction (`/assets` VFS).
-13. **Internal DMA stripe flush** for PSRAM framebuffer (Espressif BSP pattern).
+12. LittleFS on external flash via unified VFS.
+13. Internal DMA stripe flush for PSRAM framebuffer.
 
 ## API sketch: web asset sync
 
 ```cpp
 struct AssetFetchJob {
     const char *url;
-    const char *destPath;  // e.g. "/cache/e_1f496_f00.rgb565"
+    const char *destPath;
     void (*onDone)(bool ok);
 };
 
 void assetFetchQueue(const AssetFetchJob *job);
-bool assetFetchPoll();  // call from loop, non-blocking
+bool assetFetchPoll();
 ```
 
-Lucarne UI calls `sdCacheEnsure` after file complete; icon ref can point to cache path.
+After file complete: `sdCacheEnsure` + `sdCacheWarmAnim`; `ui.invalidate()`.
 
 ## Testing checklist
 
 - [ ] Boot log: PSRAM size ≥ 8 MB on target module
-- [ ] After screen show: all anim `readyBuilt[i]` true within 2 loops
-- [ ] `ESP.getFreePsram()` stable during anim (no leak)
-- [ ] WiFi download 500 KB PNG pack < 2 s on local server
-- [ ] Three anim icons same screen ≥ 12 fps effective
+- [ ] Log `ESP.getFreePsram()` before/after `WiFi.begin()`
+- [ ] After screen show: `readyBuilt[i]` true within 2 loops (N16R8)
+- [ ] Steady anim: no SD read (Serial timing or scope)
+- [ ] Partial flush 128×128 measured (target < 15 ms)
+- [ ] WiFi download 500 KB pack < 2 s LAN
+- [ ] Three anim icons same screen ≥ 12 fps perceived
 
 ## Relation to Lovebox repo
 
-Lovebox firmware project should pin:
+Lovebox firmware should pin:
 
 - Lucarne version / git submodule
-- Module: N16R8
-- Partition: keep FAT for SD cache + assets
+- Module: **N16R8**
+- Assets on **microSD FAT** (not internal `ffat` unless explicitly mounted)
 - This research pack under `docs/research/`

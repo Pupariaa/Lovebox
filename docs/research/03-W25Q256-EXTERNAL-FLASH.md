@@ -2,6 +2,8 @@
 
 Sources: [Winbond W25Q256JV product page](https://www.winbond.com/hq/product/code-storage-flash-memory/serial-nor-flash/index.html?__locale=en&partNo=W25Q256JV), ESP-IDF [SPI Flash API](https://docs.espressif.com/projects/esp-idf/en/stable/esp32/api-reference/storage/spi_flash.html), [external FAT example](https://github.com/espressif/esp-idf/tree/master/examples/storage/fatfs/ext_flash).
 
+**Recheck:** 2025-06-25
+
 ## Part summary
 
 | Parameter | Value |
@@ -15,6 +17,23 @@ Sources: [Winbond W25Q256JV product page](https://www.winbond.com/hq/product/cod
 | Endurance | min 100k erase cycles per sector |
 | Organization | 4 KB sectors; 256-byte pages |
 
+## Critical: W25Q256 does not fix PSRAM animation bottleneck
+
+Lucarne anim fast path needs **PSRAM** for:
+
+- Full framebuffer (~131 KB)
+- SD decode cache (up to 2 MB)
+- Per-icon `ready[]` composited frames (416–665 KB per icon)
+
+External NOR flash improves **asset read latency** and removes the SD card slot, but **does not replace PSRAM**. Faster storage alone leaves Lovebox on the slow anim path if `snapEnsureReady()` fails on R2.
+
+| Problem | W25Q256 helps? |
+|---------|----------------|
+| ~1 fps on N16R2 | **No** — need N16R8 + Lucarne P0 |
+| Slow factory boot (preload catalog) | **Yes** — high sequential Quad read |
+| No microSD socket (mechanical/sealing) | **Yes** |
+| > 32 MB emoji library | **No** — need SD or server cache |
+
 ## vs microSD for Lovebox assets
 
 | Criterion | W25Q256 on PCB | microSD |
@@ -23,54 +42,64 @@ Sources: [Winbond W25Q256JV product page](https://www.winbond.com/hq/product/cod
 | Capacity | Fixed 32 MB | GB scale |
 | Field swap | Reflash / OTA asset pack | User replaces card |
 | Bus | Extra SPI (or shared) | SPI or SDMMC |
-| Speed | High sequential read in Quad | SPI SD slower |
+| Speed | High sequential read in Quad | Arduino SPI SD ~0.5–1 MB/s |
 | Filesystem | LittleFS / FAT via ESP-IDF | FAT native Arduino |
 
-**Use W25Q256 when:** assets are **factory-defined** or updated by OTA asset partition; you want no moving parts and predictable read latency.
+**Use W25Q256 when:** assets are **factory-defined** or updated by OTA asset partition; predictable read latency; no moving parts.
 
-**Use SD when:** users or server push **large libraries** of photos/emojis; need >32 MB.
+**Use SD when:** users or server push **large libraries**; need >32 MB; field updates without reflashing NOR.
 
-**Hybrid (recommended product):** W25Q256 optional for **factory emoji pack** + SD for **user/server cache**. Or SD-only to minimize BOM (Lovebox v1).
+**Hybrid:** W25Q256 factory pack + SD for `/cache/` downloads (premium SKU). **Lovebox v1:** SD-only (lowest dev risk).
 
 ## ESP32 integration
 
-ESP-IDF supports W25Q256 explicitly in SPI flash driver chip list.
+ESP-IDF supports W25Q256 in SPI flash driver chip list.
 
 Typical bring-up:
 
 1. `esp_flash_init()` on second SPI bus (SPI2/SPI3).
-2. `esp_partition_register_external()` — label e.g. `assets`, subtype `ESP_PARTITION_SUBTYPE_DATA_LITTLEFS` or FAT.
-3. Mount LittleFS or FAT; serve files to Lucarne via same path API as SD.
+2. `esp_partition_register_external()` — label e.g. `assets`, subtype LittleFS or FAT.
+3. Mount filesystem; expose paths Lucarne can read via new backend or unified VFS.
 
-**Important:** External flash is **not** encrypted by ESP32 flash encryption (only internal flash). Asset encryption needs app-layer if required.
+### Filesystem choice
 
-**Pin budget (Quad SPI):** CS, CLK, MOSI(DI), MISO(DO), WP, HOLD — 6 signals + 3.3 V. Can share CLK/MOSI/MISO with display if separate CS and compatible mode; **bandwidth contention** same as SD case.
+| FS | Pros | Cons |
+|----|------|------|
+| **LittleFS** | Wear-friendly, good for NOR | Lucarne has no LittleFS backend today |
+| **FAT** | Familiar, ESP-IDF example | Wear on NOR; needs wear levelling layer |
+
+### Security
+
+External flash is **not** encrypted by ESP32 flash encryption (internal flash only). Asset encryption requires application-layer if needed.
+
+**Pin budget (Quad SPI):** CS, CLK, MOSI, MISO, WP, HOLD — 6 signals. Can share CLK/MOSI/MISO with display if separate CS; same bandwidth contention as SD.
 
 ## Capacity planning (32 MB)
 
 | Content | Size estimate |
 |---------|----------------|
-| Lucarne firmware + OTA (internal 16 MB) | stays on module flash |
+| Firmware + OTA (internal 16 MB module flash) | stays on module |
 | 50 anim × 12 frames × 48 KB (128×128 RGB565+alpha) | ~29 MB |
+| 50 anim × 12 frames × 77 KB (160×160) | ~46 MB — **exceeds 32 MB** |
 | Static images + manifest | remaining |
 
-32 MB external flash fits a **curated** emoji set, not an open gallery. SD remains needed for open-ended library.
+At **160×160 export**, 32 MB fits roughly **35 anim icons × 12 frames** — plan catalog size in Studio.
 
 ## Lucarne today
 
-- `ImageStorage::Sd` implemented.
-- `ImageStorage::Web` and `ImageStorage::Psrav` exported from Studio but **no runtime loader**.
-- External W25Q256 would map to new backend `ImageStorage::ExternalFlash` or unified VFS layer reading `/assets/...` from LittleFS regardless of physical medium.
+- `ImageStorage::Sd` implemented (microSD FAT).
+- `ImageStorage::Web` exported from Studio — **no runtime loader**.
+- External W25Q256 would need new backend or VFS layer mapping `/assets/...` regardless of physical medium.
 
 ## Cost note
 
-W25Q256JVFIQ tray pricing often **USD 1.5–3** at 100 pcs (distributor dependent). Cheaper than industrial SD card but adds PCB area and SMT line. N16R8 module already includes 16 MB internal flash — external 32 MB is for **asset volume**, not replacing module flash.
+W25Q256JVFIQ tray pricing often **USD 1.5–3** at 100 pcs. N16R8 module already includes 16 MB internal flash — external 32 MB is for **asset volume**, not replacing module flash or PSRAM.
 
 ## Decision matrix
 
 | Strategy | When |
 |----------|------|
-| SD only | Lowest dev risk; matches current Lucarne + Lovebox |
-| W25Q256 only | Closed product, fixed catalog, no card slot |
+| SD only | Lowest dev risk; matches current Lucarne + Lovebox v1 |
+| W25Q256 only | Closed product, fixed catalog ≤32 MB, no card slot |
 | Internal 16 MB flash partition | Small bootstrap UI + download rest to SD |
-| W25Q256 + SD | Premium: fast factory load + expandable cache |
+| W25Q256 + SD | Premium: fast factory load + expandable `/cache/` |

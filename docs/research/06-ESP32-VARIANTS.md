@@ -1,12 +1,14 @@
 # ESP32 variant selection for Lovebox
 
-Sources: Espressif product lines, [BLEFYI S3 vs C6](https://blefyi.com/compare/esp32-c6-vs-esp32-s3/), DroneBot Workshop 2026 guide, circuitlabs variant table.
+Sources: Espressif product lines, [BLEFYI S3 vs C6](https://blefyi.com/compare/esp32-c6-vs-esp32-s3/), [ESP-IDF RF coexistence](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s3/api-guides/coexist.html).
+
+**Recheck:** 2025-06-25
 
 ## Requirements recap
 
 - Color SPI display 280×240, animated icons, photos
 - WiFi (fetch assets from server) + BLE (provisioning / companion)
-- Fluid UI, ≤2 s asset fetch
+- Fluid UI, ≤2 s asset fetch (LAN)
 - Cost-sensitive consumer product
 
 ## Candidates
@@ -18,10 +20,19 @@ Sources: Espressif product lines, [BLEFYI S3 vs C6](https://blefyi.com/compare/e
 | Dual-core 240 MHz, mature Arduino/Lucarne stack | WiFi 4 only |
 | Native USB CDC | No Bluetooth Classic (A2DP) |
 | AI vector ops (unused today) | Last major Xtensa line |
-| N16R8: 8 MB Octal PSRAM | R8 temp max 65 °C |
+| N16R8: 8 MB Octal PSRAM | R8 temp max 65 °C (85 °C with PSRAM ECC) |
 | BLE 5.0 | |
 
 **Verdict:** default choice for Lovebox.
+
+### ESP32-S3FN8 (anti-pattern for anim)
+
+| Pro | Con |
+|-----|-----|
+| 8 MB flash, lower cost | **No PSRAM** |
+| Same S3 CPU | Lucarne full framebuffer + anim cache impossible at target quality |
+
+Do not use for animated Lovebox. Static text-only UI at best.
 
 ### ESP32 (classic, e.g. WROOM-32)
 
@@ -43,15 +54,15 @@ No BLE. Disqualified for BLE + WiFi product.
 | BLE 5 | No PSRAM on typical modules |
 | WiFi 4 | Weak for Lucarne full framebuffer + anim |
 
-Disqualified for animated color UI at target quality.
+Disqualified for animated color UI at target quality. **Lucarne not validated on C3.**
 
 ### ESP32-C6
 
 | Pro | Con |
 |-----|-----|
 | WiFi 6, BLE 5.3, Matter/Thread | Single core 160 MHz |
-| Lower power | **No RGB/SPI LCD peripheral focus** |
-| Good for smart home hub | Lucarne not ported; anim would suffer |
+| Lower power | Lucarne **not ported** |
+| Good for smart home hub | Anim + full FB would suffer |
 
 Use C6 for **gateway**, not Lovebox display device.
 
@@ -60,7 +71,7 @@ Use C6 for **gateway**, not Lovebox display device.
 | Pro | Con |
 |-----|-----|
 | 400 MHz dual-core, H.264, MIPI/RGB LCD | **No integrated WiFi/BT** — companion chip required |
-| Huge PSRAM options | Overkill cost/complexity for Lovebox |
+| Huge PSRAM options | Overkill cost/complexity for Lovebox v1 |
 
 Future platform if product grows to video; not v1.
 
@@ -68,16 +79,20 @@ Future platform if product grows to video; not v1.
 
 802.15.4 only, no WiFi. Disqualified.
 
-## WiFi + BLE concurrency
+## WiFi + BLE concurrency (ESP32-S3)
 
-ESP32-S3 runs WiFi stack + NimBLE on same chip:
+From ESP-IDF coexistence guide + WatchFace pattern:
 
-- Download assets on **Core 0** (WiFi task) with HTTP client; write SD.
-- UI loop **Core 1** (`loop` / `ui.update`) — avoid blocking HTTP in `loop()`.
-- During anim playback, **pause large downloads** or throttle to keep SPI/CPU for flush.
-- BLE provisioning sessions: short; OK overlapping idle UI.
+| Rule | Detail |
+|------|--------|
+| Enable coexistence | `CONFIG_SW_COEXIST_ENABLE=y` |
+| Core pinning | NimBLE host Core 0; WiFi stack Core 1 (or inverse — keep UI on Core 1) |
+| Download worker | Core 0, non-blocking queue; never HTTP in `loop()` |
+| BLE provisioning | Pause heavy download during user-facing pairing |
+| Scan duty | Limit BLE scan window if WiFi throughput matters (~50% duty) |
+| CPU overclock | **Avoid** with WiFi+BLE — APB timing drift |
 
-Arduino ESP32 3.x supports `xTaskCreatePinnedToCore` for download worker.
+Lucarne `runTransition()` blocks with `delay(16)` — defer network sync during transitions.
 
 ## Module SKU decision
 
@@ -86,10 +101,11 @@ Arduino ESP32 3.x supports `xTaskCreatePinnedToCore` for download worker.
 | N8R2 | Reject |
 | N16R2 | Accept only for cost-limited SKU with reduced anim |
 | **N16R8** | **Primary SKU** |
-| N16R16VA7 | Overkill unless 16 MB PSRAM needed (many simultaneous HD assets) |
+| N16R16VA7 | Overkill unless many simultaneous HD assets |
+| S3FN8 (no PSRAM) | Reject for anim |
 
 ## Long-term roadmap
 
-1. **Now:** ESP32-S3 N16R8 + Lucarne optimizations.
+1. **Now:** ESP32-S3 N16R8 + Lucarne P0 patches.
 2. **If Matter hub needed:** separate C6 border router — not merged into display MCU.
 3. **If video Lovebox:** evaluate P4 + C6 WiFi companion — new architecture.
