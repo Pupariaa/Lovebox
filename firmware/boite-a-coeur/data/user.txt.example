@@ -1,0 +1,9 @@
+device_name: BoiteACoeur
+serial_number: BAC0000000000000000
+ssid:
+psw:
+configured: 0
+uuid:
+api_url: https://boite-a-coeur.techalchemy.fr
+api_secret:
+region:

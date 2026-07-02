@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Boite a Coeur BLE</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Boite a Coeur</h1>
+      <p>Android app simulator — BLE WiFi provisioning</p>
+    </header>
+
+    <section class="panel">
+      <h2>Connection</h2>
+      <div id="statusLine" class="status-line">
+        <span class="dot"></span>
+        <span id="statusText">Disconnected</span>
+      </div>
+      <div class="row">
+        <button id="scanBtn" type="button">Scan</button>
+        <button id="disconnectBtn" type="button" class="secondary" disabled>Disconnect</button>
+        <label class="check"><input id="showAll" type="checkbox"> Show all BLE devices</label>
+      </div>
+      <p class="hint">Box on first_p3 or lost_connection. Name usually BoiteACoeur. PC Bluetooth on; phone disconnected from box.</p>
+      <ul id="deviceList" class="device-list"></ul>
+      <p id="deviceEmpty" class="empty">No devices yet. Run a scan.</p>
+    </section>
+
+    <section class="panel">
+      <h2>WiFi provisioning</h2>
+      <div class="field">
+        <label for="ssid">SSID</label>
+        <input id="ssid" type="text" autocomplete="off" placeholder="Your WiFi network">
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="off" placeholder="WiFi password">
+      </div>
+      <div class="field">
+        <label for="format">Payload format</label>
+        <select id="format">
+          <option value="pipe">ssid|password (default)</option>
+          <option value="newline">ssid + newline + password</option>
+        </select>
+      </div>
+      <div class="row">
+        <button id="sendBtn" type="button" disabled>Send credentials</button>
+      </div>
+      <p class="hint">Firmware connects for at least 8s then shows success or error screen.</p>
+    </section>
+
+    <section class="panel">
+      <h2>Log</h2>
+      <div id="log" class="log"></div>
+    </section>
+
+    <section class="panel message-panel">
+      <h2>Message composer</h2>
+      <p class="hint">Preview matches what the box displays. Drag elements on the canvas. Draft saved in browser.</p>
+      <div id="msgStatus" class="msg-status">Ready</div>
+      <div class="msg-editor">
+        <div class="msg-editor-left">
+          <div class="msg-preview-wrap">
+            <canvas id="msgPreview" width="280" height="240"></canvas>
+          </div>
+          <div class="msg-send-bar">
+            <input id="msgIp" type="text" autocomplete="off" placeholder="Box IP (or use Discover)">
+            <button id="msgDiscoverBtn" type="button" class="secondary">Discover</button>
+            <button id="msgSendBtn" type="button">Send</button>
+          </div>
+          <ul id="msgDeviceList" class="device-list"></ul>
+          <p id="msgDeviceEmpty" class="empty">No boxes found. Run discover.</p>
+        </div>
+        <div class="msg-editor-right">
+          <div class="msg-toolbar">
+            <button id="msgAddText" type="button" class="secondary small-btn">+ Text</button>
+            <button id="msgAddPhoto" type="button" class="secondary small-btn">+ Photo</button>
+            <button id="msgAddIcon" type="button" class="secondary small-btn">+ Emoji</button>
+            <button id="msgResetBtn" type="button" class="secondary small-btn">Reset</button>
+          </div>
+          <ul id="msgLayerList" class="msg-layer-list"></ul>
+          <div id="msgInspector" class="msg-inspector"></div>
+        </div>
+      </div>
+      <div id="msgEmojiPanel" class="msg-emoji-panel" hidden>
+        <div class="msg-emoji-head">
+          <input id="msgEmojiSearch" type="search" placeholder="Search emoji...">
+          <button id="msgEmojiClose" type="button" class="secondary small-btn">Close</button>
+        </div>
+        <div id="msgEmojiGrid" class="msg-emoji-grid"></div>
+      </div>
+      <div id="msgLog" class="log msg-log"></div>
+    </section>
+  </div>
+  <script src="/app.js"></script>
+  <script src="/lucarne/apng-js.js"></script>
+  <script src="/lucarne/lucarne-render.js"></script>
+  <script src="/lucarne/fluent-emojis.js"></script>
+  <script src="/message_pack.js"></script>
+  <script src="/message.js"></script>
+</body>
+</html>
