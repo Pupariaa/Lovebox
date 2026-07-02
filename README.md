@@ -1,29 +1,37 @@
 # Lovebox
 
-Firmware and product research for the Lovebox device (ESP32-S3, Lucarne UI, animated emojis, WiFi/BLE).
+Boîte à Cœur — connected gift box (ESP32 firmware, Android app, hardware research).
 
-## Research (recheck v2 — 2025-06-25)
+| Area | Path |
+| --- | --- |
+| **ESP32 firmware** | [`firmware/boite-a-coeur/`](firmware/boite-a-coeur/) |
+| **Android app** | [`applications/android/v.0.1.0/`](applications/android/v.0.1.0/) |
+| **Hardware research** | [`docs/research/`](docs/research/) |
 
-Hardware and performance study for fluid animated UI, storage, and web asset sync. Cross-checked against Lucarne source and Espressif docs.
+## UI library
 
-**[docs/research/README.md](docs/research/README.md)**
+Firmware uses **[Lucarne](https://github.com/Pupariaa/Lucarne)** (separate repo). Clone both side by side:
 
-### Recheck highlights
+```
+Documents/GitHub/
+├── Lucarne/     # UI library + Studio
+└── Lovebox/     # this repo
+```
 
-- ~1 fps on N16R2: PSRAM exhaustion in `snapEnsureReady()` — not fixed by dual SPI alone.
-- `sdCacheWarmAnim()` already in Lucarne — not called from runtime (P0 wire-up).
-- Assets live on **microSD** (`SD.begin`); internal `ffat` partition is separate.
-- Arduino SD SPI ~0.5–1 MB/s; 2 s fetch target applies to **LAN**.
+Studio project: `firmware/boite-a-coeur/Lovebox.lucarne.json`
 
-## Related
+## Firmware quick start
 
-- UI library: [Lucarne](https://github.com/Pupariaa/Lucarne)
-- Arduino test sketch: `Test_lovebox_2` (local)
+See [firmware/boite-a-coeur/README.md](firmware/boite-a-coeur/README.md).
+
+## Research
+
+Hardware and performance study — [docs/research/README.md](docs/research/README.md).
 
 ## Recommended hardware (summary)
 
-- **ESP32-S3-WROOM-1-N16R8** (16 MB flash, 8 MB Octal PSRAM)
-- ST7789 280×240, **microSD FAT** for assets (`/assets`, `/cache`)
-- Lucarne Phase 1 firmware patches before PCB spin
+- ESP32 with PSRAM (e.g. ESP32-S3-WROOM-1-N16R8)
+- ST7789 240×280, rotation 1 → logical 280×240
+- FFat internal partition for Lucarne volume assets
 
-See [docs/research/10-ACTION-PLAN.md](docs/research/10-ACTION-PLAN.md) for phased implementation.
+See [docs/research/10-ACTION-PLAN.md](docs/research/10-ACTION-PLAN.md).

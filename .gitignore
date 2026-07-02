@@ -1,0 +1,10 @@
+firmware/**/ble-sim/.venv/
+firmware/**/__pycache__/
+firmware/**/data/user.txt
+web/backend/vendor/
+web/backend/.env
+applications/**/local.properties
+applications/**/.gradle/
+applications/**/build/
+.vscode/
+applications/**/.idea/
