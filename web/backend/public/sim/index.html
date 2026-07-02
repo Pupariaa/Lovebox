@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boite a Coeur — Sim web</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <h1>Boite a Coeur</h1>
+      <p class="subtitle">Simulateur web (Chrome / Edge, Web Bluetooth)</p>
+    </header>
+
+    <section id="authPanel" class="panel">
+      <h2>Compte</h2>
+      <label class="field">
+        <span>API</span>
+        <input id="apiBase" type="url" autocomplete="off">
+      </label>
+      <div class="tabs">
+        <button type="button" id="tabLogin" class="tab active">Connexion</button>
+        <button type="button" id="tabRegister" class="tab">Inscription</button>
+      </div>
+      <label class="field">
+        <span>Email</span>
+        <input id="authEmail" type="email" autocomplete="username">
+      </label>
+      <label class="field">
+        <span>Mot de passe</span>
+        <input id="authPassword" type="password" autocomplete="current-password">
+      </label>
+      <button type="button" id="authSubmit" class="btn primary">Continuer</button>
+      <p id="authError" class="error hidden"></p>
+    </section>
+
+    <section id="mainPanel" class="panel hidden">
+      <div class="row between">
+        <p id="sessionEmail" class="muted"></p>
+        <button type="button" id="logoutBtn" class="btn ghost">Deconnexion</button>
+      </div>
+
+      <div id="statusCards" class="cards"></div>
+
+      <section class="block">
+        <h2>Boite Bluetooth</h2>
+        <p class="hint">La boite doit etre en mode configuration WiFi (Bluetooth actif). Eloigne le telephone si la boite y est deja connectee. Chrome affiche tous les peripheriques BLE si le filtre strict est vide — choisis le nom de ta boite (ex. BaCxs32f2325).</p>
+        <div class="row">
+          <button type="button" id="bleConnectBtn" class="btn primary">Connecter une boite</button>
+          <button type="button" id="bleDisconnectBtn" class="btn ghost" disabled>Deconnecter</button>
+        </div>
+        <p id="bleState" class="muted">Non connecte</p>
+        <label class="field">
+          <span>SSID WiFi</span>
+          <input id="wifiSsid" type="text" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Mot de passe WiFi</span>
+          <input id="wifiPass" type="password" autocomplete="off">
+        </label>
+        <button type="button" id="wifiProvisionBtn" class="btn" disabled>Envoyer WiFi + associer</button>
+        <p id="bleLog" class="log"></p>
+      </section>
+
+      <section class="block">
+        <h2>Partenaire</h2>
+        <button type="button" id="inviteBtn" class="btn">Generer un lien d'invitation</button>
+        <p id="inviteUrl" class="mono hidden"></p>
+        <label class="field">
+          <span>Token invitation (partenaire)</span>
+          <input id="inviteToken" type="text" placeholder="coller le token">
+        </label>
+        <button type="button" id="acceptInviteBtn" class="btn">Accepter l'invitation</button>
+        <div id="pendingRequests"></div>
+      </section>
+
+      <section class="block">
+        <h2>Message</h2>
+        <label class="field">
+          <span>Texte</span>
+          <textarea id="messageText" rows="3" placeholder="Message pour la boite partenaire"></textarea>
+        </label>
+        <button type="button" id="sendMsgBtn" class="btn primary">Envoyer</button>
+        <p id="msgResult" class="muted"></p>
+      </section>
+    </section>
+  </div>
+
+  <script src="js/bacm.js"></script>
+  <script src="js/api.js"></script>
+  <script src="js/ble.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
