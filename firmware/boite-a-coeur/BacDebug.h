@@ -35,6 +35,22 @@ public:
         va_end(ap);
         log(tag, buf);
     }
+
+    static void event(const char *tag, const char *msg) {
+        Serial.print('[');
+        Serial.print(tag);
+        Serial.print(F("] "));
+        Serial.println(msg);
+    }
+
+    static void eventf(const char *tag, const char *fmt, ...) {
+        char buf[192];
+        va_list ap;
+        va_start(ap, fmt);
+        vsnprintf(buf, sizeof(buf), fmt, ap);
+        va_end(ap);
+        event(tag, buf);
+    }
 };
 
 inline bool BacDebug::verbose = false;

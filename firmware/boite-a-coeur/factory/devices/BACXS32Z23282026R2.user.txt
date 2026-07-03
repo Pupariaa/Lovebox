@@ -1,0 +1,16 @@
+device_name: BaCxs32z2328
+factory_device_name: BaCxs32z2328
+display_name: BaCxs32z2328
+serial_number: BACXS32Z23282026R2
+ssid:
+psw:
+configured: 0
+uuid: 84242411607958485533337837657435113437051744288386392443387667225353625946419606544452827184279213526305755758339451804391494422
+locale: fr
+build_year: 2026
+build_semester: 2
+hw_revision: BaC-S3-v1
+api_url: https://boite-a-coeur.techalchemy.fr
+api_secret:
+region:
+old_boot_status:

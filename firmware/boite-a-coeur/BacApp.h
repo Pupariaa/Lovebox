@@ -22,6 +22,11 @@
 #include "BacScreens.h"
 #include "BacCloudClient.h"
 #include "BacDebug.h"
+#include "BacLocale.h"
+#include "BacFirmware.h"
+#include "BacOta.h"
+#include "BacAssetsOta.h"
+#include "BacOtaPayload.h"
 
 class BacApp {
 public:
@@ -49,8 +54,11 @@ public:
         _cache = &cache;
         randomSeed((uint32_t)(esp_random() ^ millis()));
         _config.load();
+        BacLocale::prepare(_config.locale.c_str());
+        applyUiLocale();
         applyDeviceName();
         _ble.setWifiHandler(&BacApp::wifiProvThunk, this);
+        _ble.setConfigHandler(&BacApp::bleConfigThunk, this);
         _wifi.begin(&BacApp::wifiLinkLostThunk, this);
         _mode = Mode::Caching;
         _first = FirstStep::P1;
@@ -81,6 +89,8 @@ public:
         _httpStarted = false;
         _msgRenderer.begin(&_msgStore);
         _cloudClient.begin(&_config, &BacApp::cloudMessageThunk, this);
+        _cloudClient.setConfigCommandHandler(&BacApp::cloudConfigThunk, this);
+        _cloudClient.setOtaOfferHandler(&BacApp::cloudOtaOfferThunk, this);
     }
 
     void drawMessageOverlay(lucarne::Display &disp) {
@@ -100,7 +110,7 @@ public:
         String prevUuid = _config.uuid;
         _config.ensureValidUuid();
         if (!_config.hasValidUuid()) return;
-        if (_config.uuid != prevUuid) {
+        if (_config.uuid != prevUuid && _config.serialNumber.length() > 0) {
             _config.apiSecret = "";
             _config.save();
         }
@@ -138,6 +148,7 @@ public:
         pollClock();
         pollMenuActions();
         pollPendingMessage();
+        pollOtaPending();
         if (_httpStarted) _msgServer.tick();
         if (_mode == Mode::Idle) _cloudClient.tickIdle();
         if (_touchEnabled) pollTouch(touchVal);
@@ -149,7 +160,10 @@ public:
     const BacUserConfig& userConfig() const { return _config; }
     bool reloadUserConfig() {
         _config.load();
+        BacLocale::prepare(_config.locale.c_str());
+        applyUiLocale();
         applyDeviceName();
+        updateClockLabels(true);
         return true;
     }
     const char* modeName() const {
@@ -193,6 +207,7 @@ public:
 
     void openBleProvisioning() {
         _ble.begin(_config.deviceName.c_str(), _config.serialNumber.c_str());
+        _ble.setIdentityUuid(_config.uuid.c_str());
         _ble.openProvisioning();
         BAC_LOG("ble", "provisioning on");
     }
@@ -249,6 +264,10 @@ private:
     enum class FirstStep : uint8_t { P1, P2, P3, P4, WifiConnecting, WifiError };
     enum class PendingFlow : uint8_t { None, Disconnect, WifiTest, FactoryReset };
 
+    static void bleConfigThunk(const char *payload, void *ctx) {
+        static_cast<BacApp *>(ctx)->onBleConfig(payload);
+    }
+
     static void wifiProvThunk(const char *ssid, const char *pass, void *ctx) {
         static_cast<BacApp *>(ctx)->onWifiProvision(ssid, pass);
     }
@@ -259,6 +278,22 @@ private:
 
     static void messageReceivedThunk(void *ctx, uint8_t *data, size_t len) {
         static_cast<BacApp *>(ctx)->queueMessage(data, len, 0);
+    }
+
+    static void cloudConfigThunk(void *ctx, const char *json) {
+        static_cast<BacApp *>(ctx)->onCloudCommand(json);
+    }
+
+    static void cloudOtaOfferThunk(void *ctx, const char *json) {
+        static_cast<BacApp *>(ctx)->onOtaOffer(json);
+    }
+
+    static void otaProgressThunk(void *ctx, int percent) {
+        static_cast<BacApp *>(ctx)->onOtaProgress(percent);
+    }
+
+    static void otaTaskEntry(void *arg) {
+        static_cast<BacApp *>(arg)->otaTaskBody();
     }
 
     static void cloudMessageThunk(void *ctx, uint8_t *data, size_t len, uint32_t messageId) {
@@ -290,7 +325,10 @@ private:
         if (!_msgStore.loadFromBinary(buf, len)) {
             BAC_LOG("msg", "invalid");
             heap_caps_free(buf);
-            _pendingCloudAckId = 0;
+            if (_pendingCloudAckId) {
+                _cloudClient.nackMessage(_pendingCloudAckId);
+                _pendingCloudAckId = 0;
+            }
             return;
         }
         heap_caps_free(buf);
@@ -303,6 +341,7 @@ private:
 
     void onMessageReceived() {
         BAC_LOG("msg", "received");
+        if (_otaRunning || _otaPending) return;
         if (_mode == Mode::Settings || _mode == Mode::FirstSetup || _mode == Mode::WifiBoot) return;
         goInstant(&projet::screen_scr_mqxp1ppa3);
     }
@@ -435,13 +474,226 @@ private:
         _config.ssid = "";
         _config.psw = "";
         _config.configured = false;
+        _config.claimed = false;
         _config.apiSecret = "";
-        _config.regenerateUuid();
         _config.save();
         _pendingFlow = PendingFlow::None;
         BAC_LOG("sys", "factory reset restart");
         delay(100);
         ESP.restart();
+    }
+
+    void onCloudCommand(const char *json) {
+        if (!json) return;
+        String body = json;
+        String type = BacCloudClient::extractJsonString(body, "command_type");
+        if (type == "ota") {
+            if (!canRunOta()) {
+                BacDebug::event("ota", "blocked during setup");
+                return;
+            }
+            uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
+            String payload = BacCloudClient::extractJsonObject(body, "payload");
+            if (!payload.length()) payload = body;
+            queueOtaFromPayload(payload, cmdId);
+            return;
+        }
+        if (type.length() && type != "config") return;
+        int idx = body.indexOf("\"display_name\":\"");
+        if (idx >= 0) {
+            idx += 16;
+            int end = body.indexOf('"', idx);
+            if (end > idx) {
+                _config.displayName = body.substring(idx, end);
+                applyDeviceName();
+                _config.save();
+            }
+        }
+        idx = body.indexOf("\"region\":\"");
+        if (idx >= 0) {
+            idx += 10;
+            int end = body.indexOf('"', idx);
+            if (end > idx) {
+                _config.region = body.substring(idx, end);
+                _config.save();
+            }
+        }
+    }
+
+    void onOtaOffer(const char *json) {
+        if (!json || _otaRunning || !canRunOta()) return;
+        queueOtaFromPayload(String(json), 0);
+    }
+
+    bool canRunOta() const {
+        return _config.setupComplete() && _mode == Mode::Idle;
+    }
+
+    void queueOtaFromPayload(const String &payload, uint32_t commandId) {
+        if (_otaRunning || _otaPending) return;
+        if (!_config.claimed) {
+            BacDebug::event("ota", "blocked not claimed");
+            return;
+        }
+        if (_otaShaBackoffUntilMs != 0 && millis() < _otaShaBackoffUntilMs) {
+            BacDebug::event("ota", "sha backoff active");
+            return;
+        }
+        String root = payload;
+        String inner = BacCloudClient::extractJsonObject(payload, "payload");
+        if (inner.length()) root = inner;
+        BacOtaPayload parsed;
+        if (!BacOtaPayload::parseFromJson(root, parsed)) {
+            BacDebug::event("ota", "invalid payload");
+            return;
+        }
+        _otaPayload = parsed;
+        _otaCommandId = commandId;
+        _otaPending = true;
+        BacDebug::eventf("ota", "queued v=%s fw=%d assets=%d", _otaPayload.version, _otaPayload.hasFirmware() ? 1 : 0,
+                         _otaPayload.hasAssets() ? 1 : 0);
+    }
+
+    void pollOtaPending() {
+        if (_otaFailUntilMs != 0) {
+            if (millis() < _otaFailUntilMs) return;
+            _otaFailUntilMs = 0;
+            _cloudClient.setOtaHold(false);
+            enterIdle();
+            return;
+        }
+        if (_otaAssetsDone) {
+            _otaAssetsDone = false;
+            _cloudClient.setOtaHold(false);
+            if (!lucarne::volumeMounted()) {
+                if (!lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat")) {
+                    BacDebug::event("ota", "volume remount failed");
+                }
+            }
+            reloadUserConfig();
+            startMessageServer();
+            enterIdle();
+            return;
+        }
+        if (_otaFailed) {
+            _otaFailed = false;
+            projet::w90.setText(BacLocale::ota_failed);
+            projet::w91.setText("");
+            if (_ui) _ui->invalidate();
+            _otaFailUntilMs = millis() + 6000;
+            return;
+        }
+        if (!_otaPending || _otaRunning) return;
+        if (!canRunOta()) return;
+        _otaPending = false;
+        startOtaUpdate();
+    }
+
+    void startOtaUpdate() {
+        if (_otaRunning || !_otaPayload.valid()) return;
+        if (_otaTask != nullptr) return;
+        _otaRunning = true;
+        _cloudClient.setOtaHold(true);
+        stopMessageServer();
+        goInstant(&projet::screen_scr_mr3hcyofj);
+        projet::w90.setText(BacLocale::ota_progress);
+        projet::w91.setText(BacLocale::ota_warn);
+        if (_ui) _ui->invalidate();
+        xTaskCreatePinnedToCore(&BacApp::otaTaskEntry, "bacOta", 16384, this, 2, &_otaTask, 1);
+    }
+
+    void onOtaProgress(int percent) {
+        if (percent < 0) percent = 0;
+        if (percent > 100) percent = 100;
+        char buf[48];
+        snprintf(buf, sizeof(buf), "%s %d%%", BacLocale::ota_progress, percent);
+        projet::w90.setText(buf);
+        if (_ui) _ui->invalidate();
+    }
+
+    void otaTaskBody() {
+        bool needFw = _otaPayload.hasFirmware();
+        if (needFw && _otaPayload.version[0] && strcmp(BAC_FW_VERSION, _otaPayload.version) == 0) {
+            BacDebug::event("ota", "firmware skip, already current");
+            needFw = false;
+        }
+        bool fwOk = true;
+        bool shaFail = false;
+        if (needFw) {
+            fwOk = BacOta::installFromUrl(_otaPayload.fwUrl, _otaPayload.fwSize, _otaPayload.fwSha256,
+                                            &BacApp::otaProgressThunk, this, &shaFail);
+        }
+        bool assetsOk = true;
+        if (fwOk && _otaPayload.hasAssets()) {
+            bool assetsShaFail = false;
+            assetsOk = BacAssetsOta::installPackFromUrl(_otaPayload.assetsUrl, _otaPayload.assetsSize,
+                                                        _otaPayload.assetsSha256, &BacApp::otaProgressThunk, this,
+                                                        &assetsShaFail);
+            if (assetsShaFail) shaFail = true;
+        }
+        bool ok = fwOk && assetsOk;
+        uint32_t cmdId = _otaCommandId;
+        if (ok && cmdId) _cloudClient.ackCommand(cmdId);
+        if (!ok && cmdId) _cloudClient.failCommand(cmdId);
+        if (!ok) {
+            if (shaFail) {
+                _otaShaFailCount++;
+                if (_otaShaFailCount >= 3) {
+                    _otaShaBackoffUntilMs = millis() + 300000;
+                    _otaShaFailCount = 0;
+                    BacDebug::event("ota", "sha backoff 5 min");
+                }
+            }
+            BacDebug::eventf("ota", "failed v=%s", _otaPayload.version);
+        } else {
+            _otaShaFailCount = 0;
+            BacDebug::eventf("ota", "success v=%s reboot=%d", _otaPayload.version, needFw ? 1 : 0);
+        }
+        _otaCommandId = 0;
+        memset(&_otaPayload, 0, sizeof(_otaPayload));
+        _otaTask = nullptr;
+        _otaRunning = false;
+        if (ok && needFw) {
+            lucarne::unmountVolume();
+            delay(400);
+            ESP.restart();
+        } else if (ok) {
+            if (!lucarne::volumeMounted()) {
+                if (!lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat")) {
+                    BacDebug::event("ota", "volume remount failed");
+                }
+            }
+            _otaAssetsDone = true;
+        } else {
+            lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
+            _otaFailed = true;
+        }
+        vTaskDelete(nullptr);
+    }
+
+    void onCloudConfig(const char *json) {
+        onCloudCommand(json);
+    }
+
+    void onBleConfig(const char *payload) {
+        if (!payload || !payload[0]) return;
+        char raw[192];
+        strncpy(raw, payload, sizeof(raw) - 1);
+        raw[sizeof(raw) - 1] = 0;
+        char *p1 = strchr(raw, '|');
+        if (p1) *p1 = 0;
+        char *p2 = p1 ? strchr(p1 + 1, '|') : nullptr;
+        if (p2) *p2 = 0;
+        if (raw[0]) {
+            _config.displayName = String(raw);
+            applyDeviceName();
+        }
+        if (p1 && p1[1]) _config.locale = String(p1 + 1);
+        if (p2 && p2[1]) _config.region = String(p2 + 1);
+        _config.save();
+        applyUiLocale();
+        updateClockLabels(true);
+        BAC_LOG("ble", "config updated");
     }
 
     void pollMenuActions() {
@@ -455,8 +707,17 @@ private:
 
     void onScreenEnter(lucarne::Screen *screen) {
         if (!screen || !screen->name()) return;
+        if (strcmp(screen->name(), "settings_informations") == 0) {
+            bindSettingsInfo();
+        }
         if (strcmp(screen->name(), "settings_wifi") == 0) {
-            projet::w52.setText(_config.ssid.length() ? _config.ssid.c_str() : "—");
+            projet::w51.setText(_config.ssid.length() ? _config.ssid.c_str() : "-");
+        }
+        if (strcmp(screen->name(), "first_p3") == 0) {
+            applyDeviceName();
+        }
+        if (strcmp(screen->name(), "settings_date_hours") == 0) {
+            projet::w52.setSelected(localeMenuIndex());
         }
         if (strcmp(screen->name(), "settings_wifi_test") == 0) {
             startWifiTestFlow();
@@ -626,8 +887,6 @@ private:
         _wasTouchPressed = false;
         _touchEnabled = true;
         closeBleProvisioning(false);
-        projet::w48.setFont(&lucarne::LucarneFontBody);
-        projet::w48.setSize(1);
         go(&projet::screen_scr_mqzyaiw41j);
         updateClockLabels(true);
         startMessageServer();
@@ -747,6 +1006,10 @@ private:
             if (pressed && !_touchSelectFired && _ui->activeMenu() &&
                 (now - _touchPressStartMs >= MENU_SELECT_HOLD_MS)) {
                 _touchSelectFired = true;
+                if (onCurrentScreen("settings_date_hours") && _ui->activeMenu() == &projet::w52) {
+                    int idx = projet::w52.selectedIndex();
+                    if (idx >= 0 && idx <= 5) applyLanguageFromMenu(idx);
+                }
                 _ui->select();
             }
             if (!pressed && _wasTouchPressed && !_touchSelectFired) {
@@ -800,33 +1063,133 @@ private:
             char tb[8];
             snprintf(tb, sizeof(tb), "%02d:%02d", ti.tm_hour, ti.tm_min);
             _clockTimeText = tb;
-            static const char *days[] = {"Dimanche", "Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"};
-            static const char *months[] = {"Janvier", "Fevrier", "Mars", "Avril", "Mai", "Juin",
-                                           "Juillet", "Aout", "Septembre", "Octobre", "Novembre", "Decembre"};
             int dow = ti.tm_wday;
             int mon = ti.tm_mon;
             if (dow < 0 || dow > 6) dow = 0;
             if (mon < 0 || mon > 11) mon = 0;
             char db[32];
-            snprintf(db, sizeof(db), "%s %d %s", days[dow], ti.tm_mday, months[mon]);
+            snprintf(db, sizeof(db), "%s %d %s", BacLocale::dayName(dow), ti.tm_mday, BacLocale::monthName(mon));
             _clockDateText = db;
         }
-        projet::w44.setText(_clockTimeText.c_str());
-        projet::w48.setText(_clockDateText.c_str());
+        projet::w43.setText(_clockTimeText.c_str());
+        projet::w46.setText(_clockDateText.c_str());
+        if (_msgStore.hasMessage()) {
+            projet::w44.setText(BacLocale::new_message);
+        } else {
+            projet::w44.setText(BacLocale::idle_no_msg);
+        }
         if (_ui->current() == &projet::screen_scr_mqzyaiw41j) {
             _ui->invalidate();
         }
     }
 
     void applyDeviceName() {
-        projet::w29.setText(_config.deviceName.c_str());
+        _deviceLabelText = _config.labelName();
+        projet::w28.setText(_deviceLabelText.c_str());
+        if (_ui) _ui->invalidate();
+    }
+
+    void bindSettingsInfo() {
+        projet::w73.setText(BAC_FW_VERSION);
+        _infoBuildText = _config.buildYear.length() ? _config.buildYear : "-";
+        if (_config.buildSemester.length()) _infoBuildText += String(" R") + _config.buildSemester;
+        projet::w78.setText(_infoBuildText.c_str());
+        projet::w79.setText(_config.hwRevision.length() ? _config.hwRevision.c_str() : "BaC");
+        uint8_t mac[6];
+        WiFi.macAddress(mac);
+        char macBuf[18];
+        snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        projet::w80.setText(macBuf);
+        applyDeviceName();
     }
 
     void setSsidLabels(const char *ssid) {
         if (!ssid) ssid = "";
-        projet::w37.setText(ssid);
-        projet::w41.setText(ssid);
-        projet::w52.setText(ssid);
+        projet::w36.setText(ssid);
+        projet::w40.setText(ssid);
+        projet::w51.setText(ssid);
+    }
+
+    void applyUiLocale() {
+        BacLocale::prepare(_config.locale.c_str());
+        projet::w0.setText(BacLocale::lost_title);
+        projet::w1.setText(BacLocale::lost_l1);
+        projet::w2.setText(BacLocale::lost_l2);
+        projet::w3.setText(BacLocale::lost_l3);
+        projet::w4.setText(BacLocale::lost_l4);
+        projet::w5.setText(BacLocale::lost_l5);
+        projet::w6.setText(BacLocale::lost_l6);
+        projet::w8.setText(BacLocale::splash_boot);
+        projet::w11.setText(BacLocale::welcome_l1);
+        projet::w12.setText(BacLocale::welcome_l2);
+        projet::w14.setText(BacLocale::next);
+        projet::w17.setText(BacLocale::new_message);
+        projet::w19.setText(BacLocale::open_msg);
+        projet::w21.setText(BacLocale::dl_app);
+        projet::w22.setText(BacLocale::dl_app2);
+        projet::w24.setText(BacLocale::next);
+        projet::w26.setText(BacLocale::bt_l3);
+        projet::w27.setText(BacLocale::bt_l1);
+        projet::w30.setText(BacLocale::bt_l4);
+        projet::w31.setText(BacLocale::bravo);
+        projet::w33.setText(BacLocale::done_l1);
+        projet::w34.setText(BacLocale::done_l2);
+        projet::w35.setText(BacLocale::wifi_err_title);
+        projet::w37.setText(BacLocale::wifi_err_hint);
+        projet::w39.setText(BacLocale::wifi_conn_title);
+        projet::w41.setText(BacLocale::wifi_conn_progress);
+        projet::w45.setText(BacLocale::idle_send_heart);
+        projet::w54.setText(BacLocale::disc_q1);
+        projet::w55.setText(BacLocale::disc_q2);
+        projet::w56.setText(BacLocale::disc_q3);
+        projet::w57.setText(BacLocale::disc_progress);
+        projet::w59.setText(BacLocale::disc_done);
+        projet::w60.setText(BacLocale::disc_need1);
+        projet::w61.setText(BacLocale::disc_need2);
+        projet::w62.setText(BacLocale::disc_need3);
+        projet::w64.setText(BacLocale::wifi_test_progress);
+        projet::w67.setText(BacLocale::wifi_test_ok);
+        projet::w70.setText(BacLocale::wifi_test_fail1);
+        projet::w71.setText(BacLocale::wifi_test_fail2);
+        projet::w74.setText(BacLocale::info_fw);
+        projet::w75.setText(BacLocale::info_build);
+        projet::w76.setText(BacLocale::info_model);
+        projet::w77.setText(BacLocale::info_mac);
+        projet::w83.setText(BacLocale::factory_q1);
+        projet::w84.setText(BacLocale::factory_q2);
+        projet::w85.setText(BacLocale::factory_q3);
+        projet::w86.setText(BacLocale::factory_q4);
+        projet::w88.setText(BacLocale::factory_progress);
+        projet::w89.setText(BacLocale::factory_warn);
+        projet::w90.setText(BacLocale::ota_progress);
+        projet::w91.setText(BacLocale::ota_warn);
+        if (_ui) _ui->invalidate();
+    }
+
+    int localeMenuIndex() const {
+        if (_config.locale == "en") return 1;
+        if (_config.locale == "it") return 2;
+        if (_config.locale == "de") return 3;
+        if (_config.locale == "pt") return 4;
+        if (_config.locale == "es") return 5;
+        return 0;
+    }
+
+    void applyLanguageFromMenu(int index) {
+        switch (index) {
+            case 0: _config.locale = "fr"; break;
+            case 1: _config.locale = "en"; break;
+            case 2: _config.locale = "it"; break;
+            case 3: _config.locale = "de"; break;
+            case 4: _config.locale = "pt"; break;
+            case 5: _config.locale = "es"; break;
+            default: return;
+        }
+        _config.save();
+        applyUiLocale();
+        updateClockLabels(true);
+        BAC_LOGF("locale", "set %s", _config.locale.c_str());
     }
 
     void go(lucarne::Screen *screen) {
@@ -905,6 +1268,18 @@ private:
     String _pendingPass;
     String _clockTimeText;
     String _clockDateText;
+    String _deviceLabelText;
+    String _infoBuildText;
+    volatile bool _otaPending = false;
+    volatile bool _otaRunning = false;
+    volatile bool _otaFailed = false;
+    volatile bool _otaAssetsDone = false;
+    uint32_t _otaCommandId = 0;
+    uint32_t _otaFailUntilMs = 0;
+    uint32_t _otaShaBackoffUntilMs = 0;
+    uint8_t _otaShaFailCount = 0;
+    BacOtaPayload _otaPayload = {};
+    TaskHandle_t _otaTask = nullptr;
 };
 
 #else

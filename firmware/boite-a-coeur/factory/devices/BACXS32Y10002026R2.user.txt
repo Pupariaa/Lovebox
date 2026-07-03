@@ -1,0 +1,16 @@
+device_name: BaCxs32y1000
+factory_device_name: BaCxs32y1000
+display_name: BaCxs32y1000
+serial_number: BACXS32Y10002026R2
+ssid:
+psw:
+configured: 0
+uuid: 50103783239621482484741060042709435375716756220716587721808470213632296930438839033136122372244377314466127445475076819055402648
+locale: fr
+build_year: 2026
+build_semester: 2
+hw_revision: BaC-S3-v1
+api_url: https://boite-a-coeur.techalchemy.fr
+api_secret:
+region:
+old_boot_status:

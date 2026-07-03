@@ -41,34 +41,43 @@ The partition label must be `ffat` (see `Projet_setup.h` → `mountVolume(..., "
 #define LUCARNE_ENABLE_VOLUME 1
 ```
 
-## User config file
+## User config (NVS)
 
-Before first boot (or to pre-seed identity), copy the example on the volume:
+User settings are stored in **NVS** (Preferences namespace `bac`), not on FFAT.
 
-```
-firmware/boite-a-coeur/data/user.txt.example  →  data/user.txt
-```
+See **[factory/README.md](../factory/README.md)** for device identity files and recovery steps.
 
-Keys (one `key: value` per line):
+At factory, program identity via:
+
+| Method | Notes |
+| --- | --- |
+| `factory/devices/{SERIAL}.user.txt` | One-shot migration: copy to `data/user.txt`, upload FFAT once, delete |
+| NVS partition tool | Write keys under namespace `bac` directly |
+
+Required for cloud register: `serial_number`, valid 128-digit `uuid` (auto-generated if missing).
+
+Keys persisted in NVS:
 
 | Key | Purpose |
 | --- | --- |
 | `device_name` | BLE advertised name (default `BoiteACoeur`) |
 | `serial_number` | Device serial string |
 | `ssid` / `psw` | WiFi credentials (empty until provisioned) |
-| `configured` | `0` = run first-setup flow; `1` = skip to WiFi boot |
-| `uuid` | 128-digit identifier (auto-generated on first setup) |
+| `configured` | `false` = run first-setup flow |
+| `claimed` | Cache from backend register (`owner_user_id`) |
+| `uuid` | 128-digit identifier |
+| `api_secret` | Device cloud secret |
 | `tz_offset` | Optional timezone offset in seconds |
 
-Leave `ssid` and `psw` empty for BLE provisioning on first run.
+`setupComplete()` requires configured + WiFi + secret + claimed. OTA is blocked until claim.
 
 ## Upload volume assets
 
 1. Open `firmware/boite-a-coeur/` as the sketch folder.
 2. **Tools → ESP32 Sketch Data Upload** (or equivalent FFat uploader).
-3. Upload the entire `data/` tree (assets, manifest, `user.txt`).
+3. Upload **`data/assets/`** only (no `user.txt` on new factory images).
 
-See `data/VOLUME_MANIFEST.txt` for the expected file list and partition notes.
+See `factory/VOLUME_MANIFEST.txt` for the expected file list and partition notes.
 
 ## Flash firmware
 
@@ -86,3 +95,14 @@ Edit screens in Lucarne Studio using `Lovebox.lucarne.json`, export headers into
 
 - [BLE_SIM.md](BLE_SIM.md) — local BLE + message composer without physical phone
 - [MESSAGES.md](MESSAGES.md) — BACM format and HTTP API
+- Compile flag `BAC_DEV_INSECURE_TLS` — skip TLS certificate verification (local dev only)
+
+## Factory recovery
+
+If FFAT is corrupted after a failed OTA:
+
+1. Reflash firmware over USB
+2. Re-upload FFAT assets
+3. BLE provision + phone claim → OTA from backend
+
+See [OTA.md](OTA.md) for the full recovery flow.

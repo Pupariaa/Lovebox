@@ -20,7 +20,7 @@ Boîte à Cœur is an ESP32 firmware sketch under `firmware/boite-a-coeur/`. It 
 | `BacApp` | State machine, navigation, touch, WiFi/BLE lifecycle |
 | `BacBle` | BLE GATT server for WiFi credential writes |
 | `BacWifi` | STA connect, reconnect, link-loss detection |
-| `BacUserConfig` | Persistent `user.txt` on FFat |
+| `BacUserConfig` | Persistent config in NVS (`Preferences`, namespace `bac`) |
 | `BacScreenCache` | Boot and lazy asset warming for screens |
 | `BacTouch` | Median-filtered `touchRead()` on GPIO 1 |
 | `BacTimeSync` | NTP + timezone offset via ip-api.com |
@@ -37,7 +37,7 @@ Boîte à Cœur is an ESP32 firmware sketch under `firmware/boite-a-coeur/`. It 
 | Mode | When | Behaviour |
 | --- | --- | --- |
 | `Caching` | Boot, before cache ready | Screen cache warming |
-| `FirstSetup` | `configured: 0` in `user.txt` | Onboarding screens P1–P4, BLE WiFi |
+| `FirstSetup` | `configured: 0` in NVS | Onboarding screens P1–P4, BLE WiFi |
 | `WifiBoot` | WiFi creds present at boot | Connect, NTP, then idle |
 | `Idle` | Connected and ready | Home screen, message server, settings entry |
 | `Lost` | No WiFi or link lost | `lost_connection` + BLE provisioning |

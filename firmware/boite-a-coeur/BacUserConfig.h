@@ -3,10 +3,17 @@
 #if defined(ESP32)
 
 #include <Arduino.h>
+#include <Preferences.h>
 #include <Lucarne.h>
+#include "BacDebug.h"
 
 struct BacUserConfig {
+    static constexpr const char *kNvsNs = "bac";
+    static constexpr const char *kNvsInitKey = "nvs_init";
+
     String deviceName;
+    String factoryDeviceName;
+    String displayName;
     String serialNumber;
     String ssid;
     String psw;
@@ -15,12 +22,27 @@ struct BacUserConfig {
     String apiUrl;
     String apiSecret;
     String region;
+    String locale;
+    String buildYear;
+    String buildSemester;
+    String hwRevision;
     bool configured = false;
+    bool claimed = false;
     int32_t tzOffsetSec = 0;
     bool tzOffsetValid = false;
 
     bool wifiConfigured() const { return ssid.length() > 0; }
     bool deviceConfigured() const { return configured; }
+
+    bool setupComplete() const {
+        return configured && wifiConfigured() && apiSecret.length() > 0 && claimed;
+    }
+
+    String labelName() const {
+        if (displayName.length()) return displayName;
+        if (deviceName.length()) return deviceName;
+        return "BoiteACoeur";
+    }
 
     void regenerateUuid() {
         uuid = "";
@@ -42,7 +64,57 @@ struct BacUserConfig {
     }
 
     bool load() {
+        resetFields();
+        Preferences prefs;
+        if (!prefs.begin(kNvsNs, true)) return false;
+        bool hasNvs = prefs.getBool(kNvsInitKey, false);
+        if (hasNvs) {
+            loadFromPrefs(prefs);
+            prefs.end();
+            applyDefaults();
+            return true;
+        }
+        prefs.end();
+        if (migrateFromUserTxt()) {
+            save();
+            return true;
+        }
+        applyDefaults();
+        return false;
+    }
+
+    bool save() const {
+        Preferences prefs;
+        if (!prefs.begin(kNvsNs, false)) return false;
+        prefs.putBool(kNvsInitKey, true);
+        prefs.putString("device_name", deviceName);
+        prefs.putString("factory_device_name", factoryDeviceName.length() ? factoryDeviceName : deviceName);
+        prefs.putString("display_name", displayName.length() ? displayName : deviceName);
+        prefs.putString("serial_number", serialNumber);
+        prefs.putString("ssid", ssid);
+        prefs.putString("psw", psw);
+        prefs.putString("old_boot_status", oldBootStatus);
+        prefs.putString("uuid", uuid);
+        prefs.putString("api_url", apiUrl);
+        prefs.putString("api_secret", apiSecret);
+        prefs.putString("region", region);
+        prefs.putString("locale", locale.length() ? locale : "fr");
+        prefs.putString("build_year", buildYear);
+        prefs.putString("build_semester", buildSemester);
+        prefs.putString("hw_revision", hwRevision);
+        prefs.putBool("configured", configured);
+        prefs.putBool("claimed", claimed);
+        if (tzOffsetValid) prefs.putInt("tz_offset", tzOffsetSec);
+        else prefs.remove("tz_offset");
+        prefs.end();
+        return true;
+    }
+
+private:
+    void resetFields() {
         deviceName = "";
+        factoryDeviceName = "";
+        displayName = "";
         serialNumber = "";
         ssid = "";
         psw = "";
@@ -51,13 +123,53 @@ struct BacUserConfig {
         apiUrl = "";
         apiSecret = "";
         region = "";
+        locale = "fr";
+        buildYear = "";
+        buildSemester = "";
+        hwRevision = "";
         configured = false;
+        claimed = false;
         tzOffsetSec = 0;
         tzOffsetValid = false;
-        bool hasConfiguredKey = false;
+    }
+
+    void applyDefaults() {
+        if (deviceName.length() == 0) deviceName = "BoiteACoeur";
+        if (factoryDeviceName.length() == 0) factoryDeviceName = deviceName;
+        if (displayName.length() == 0) displayName = deviceName;
+        if (locale.length() == 0) locale = "fr";
+        if (!configured && ssid.length() > 0) configured = true;
+    }
+
+    void loadFromPrefs(Preferences &prefs) {
+        deviceName = prefs.getString("device_name", "");
+        factoryDeviceName = prefs.getString("factory_device_name", "");
+        displayName = prefs.getString("display_name", "");
+        serialNumber = prefs.getString("serial_number", "");
+        ssid = prefs.getString("ssid", "");
+        psw = prefs.getString("psw", "");
+        oldBootStatus = prefs.getString("old_boot_status", "");
+        uuid = prefs.getString("uuid", "");
+        apiUrl = prefs.getString("api_url", "");
+        apiSecret = prefs.getString("api_secret", "");
+        region = prefs.getString("region", "");
+        locale = prefs.getString("locale", "fr");
+        buildYear = prefs.getString("build_year", "");
+        buildSemester = prefs.getString("build_semester", "");
+        hwRevision = prefs.getString("hw_revision", "");
+        configured = prefs.getBool("configured", false);
+        claimed = prefs.getBool("claimed", false);
+        if (prefs.isKey("tz_offset")) {
+            tzOffsetSec = prefs.getInt("tz_offset", 0);
+            tzOffsetValid = true;
+        }
+    }
+
+    bool migrateFromUserTxt() {
         if (!lucarne::volumeMounted() || !lucarne::volumeFs()) return false;
         File f = lucarne::volumeFs()->open("/user.txt", FILE_READ);
         if (!f) return false;
+        bool hasConfiguredKey = false;
         while (f.available()) {
             String line = f.readStringUntil('\n');
             line.trim();
@@ -69,6 +181,8 @@ struct BacUserConfig {
             key.trim();
             val.trim();
             if (key == "device_name") deviceName = val;
+            else if (key == "factory_device_name") factoryDeviceName = val;
+            else if (key == "display_name") displayName = val;
             else if (key == "serial_number") serialNumber = val;
             else if (key == "ssid") ssid = val;
             else if (key == "psw") psw = val;
@@ -77,6 +191,10 @@ struct BacUserConfig {
             else if (key == "api_url") apiUrl = val;
             else if (key == "api_secret") apiSecret = val;
             else if (key == "region") region = val;
+            else if (key == "locale") locale = val.length() ? val : "fr";
+            else if (key == "build_year") buildYear = val;
+            else if (key == "build_semester") buildSemester = val;
+            else if (key == "hw_revision") hwRevision = val;
             else if (key == "configured") {
                 configured = val.toInt() != 0;
                 hasConfiguredKey = true;
@@ -86,46 +204,13 @@ struct BacUserConfig {
             }
         }
         f.close();
-        if (deviceName.length() == 0) deviceName = "BoiteACoeur";
+        if (serialNumber.length() == 0 || uuid.length() == 0) return false;
         if (!hasConfiguredKey) configured = ssid.length() > 0;
-        return true;
-    }
-
-    bool save() const {
-        if (!lucarne::volumeMounted() || !lucarne::volumeFs()) return false;
-        File f = lucarne::volumeFs()->open("/user.txt", FILE_WRITE);
-        if (!f) return false;
-        f.print("device_name: ");
-        f.println(deviceName);
-        f.print("serial_number: ");
-        f.println(serialNumber);
-        f.print("ssid: ");
-        f.println(ssid);
-        f.print("psw: ");
-        f.println(psw);
-        f.print("configured: ");
-        f.println(configured ? 1 : 0);
-        f.print("uuid: ");
-        f.println(uuid);
-        if (apiUrl.length()) {
-            f.print("api_url: ");
-            f.println(apiUrl);
+        applyDefaults();
+        BacDebug::event("config", "migrated user.txt to nvs");
+        if (lucarne::volumeFs()->remove("/user.txt")) {
+            BacDebug::event("config", "removed user.txt");
         }
-        if (apiSecret.length()) {
-            f.print("api_secret: ");
-            f.println(apiSecret);
-        }
-        if (region.length()) {
-            f.print("region: ");
-            f.println(region);
-        }
-        f.print("old_boot_status: ");
-        f.println(oldBootStatus);
-        if (tzOffsetValid) {
-            f.print("tz_offset: ");
-            f.println(tzOffsetSec);
-        }
-        f.close();
         return true;
     }
 };
@@ -134,6 +219,8 @@ struct BacUserConfig {
 
 struct BacUserConfig {
     String deviceName;
+    String factoryDeviceName;
+    String displayName;
     String serialNumber;
     String ssid;
     String psw;
@@ -142,11 +229,18 @@ struct BacUserConfig {
     String apiUrl;
     String apiSecret;
     String region;
+    String locale;
+    String buildYear;
+    String buildSemester;
+    String hwRevision;
     bool configured = false;
+    bool claimed = false;
     int32_t tzOffsetSec = 0;
     bool tzOffsetValid = false;
     bool wifiConfigured() const { return false; }
     bool deviceConfigured() const { return false; }
+    bool setupComplete() const { return false; }
+    String labelName() const { return "BoiteACoeur"; }
     void regenerateUuid() {}
     bool hasValidUuid() const { return false; }
     void ensureValidUuid() {}

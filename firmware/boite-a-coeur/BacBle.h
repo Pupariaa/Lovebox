@@ -19,6 +19,17 @@ public:
     static const uint8_t PROV_FAIL = 3;
 
     typedef void (*WifiProvHandler)(const char *ssid, const char *pass, void *ctx);
+    typedef void (*ConfigHandler)(const char *payload, void *ctx);
+
+    void setIdentityUuid(const char *uuid) {
+        if (uuid) _deviceUuid = uuid;
+        syncIdentityCharacteristic();
+    }
+
+    void setConfigHandler(ConfigHandler fn, void *ctx) {
+        _configHandler = fn;
+        _configHandlerCtx = ctx;
+    }
 
     bool begin(const char *deviceName, const char *serialNumber = nullptr) {
         if (deviceName && strlen(deviceName) > 0) _deviceName = deviceName;
@@ -45,6 +56,11 @@ public:
         _infoChr = service->createCharacteristic(
             "bac1c204-36e1-4688-b7f5-ea07361b26a8",
             BLECharacteristic::PROPERTY_READ);
+        _configChr = service->createCharacteristic(
+            "bac1c205-36e1-4688-b7f5-ea07361b26a8",
+            BLECharacteristic::PROPERTY_WRITE | BLECharacteristic::PROPERTY_WRITE_NR);
+        _configChr->setCallbacks(&_configCb);
+        _configCb.owner = this;
         syncIdentityCharacteristic();
         service->start();
         _adv = BLEDevice::getAdvertising();
@@ -145,6 +161,7 @@ public:
         _wifiChr = nullptr;
         _statusChr = nullptr;
         _infoChr = nullptr;
+        _configChr = nullptr;
         _adv = nullptr;
         _ready = false;
         _shutdownPending = false;
@@ -175,6 +192,8 @@ private:
         String payload = _deviceName;
         payload += "|";
         payload += _serialNumber;
+        payload += "|";
+        payload += _deviceUuid;
         _infoChr->setValue(payload.c_str());
     }
 
@@ -210,6 +229,20 @@ private:
                 return;
             }
             if (owner->_provisionWanted) owner->startAdvertising();
+        }
+    };
+
+    class ConfigCallbacks : public BLECharacteristicCallbacks {
+    public:
+        BacBle *owner = nullptr;
+        void onWrite(BLECharacteristic *chr) override {
+            if (!owner || !owner->_configHandler) return;
+            size_t len = chr->getLength();
+            if (len == 0 || len > 191) return;
+            char raw[192];
+            memcpy(raw, chr->getData(), len);
+            raw[len] = 0;
+            owner->_configHandler(raw, owner->_configHandlerCtx);
         }
     };
 
@@ -255,15 +288,20 @@ private:
 
     String _deviceName;
     String _serialNumber;
+    String _deviceUuid;
     BLEServer *_server = nullptr;
     BLECharacteristic *_wifiChr = nullptr;
     BLECharacteristic *_statusChr = nullptr;
     BLECharacteristic *_infoChr = nullptr;
+    BLECharacteristic *_configChr = nullptr;
     BLEAdvertising *_adv = nullptr;
     ServerCallbacks _serverCb;
     WifiCallbacks _wifiCb;
+    ConfigCallbacks _configCb;
     WifiProvHandler _handler = nullptr;
     void *_handlerCtx = nullptr;
+    ConfigHandler _configHandler = nullptr;
+    void *_configHandlerCtx = nullptr;
     uint8_t _statusCode = PROV_IDLE;
     bool _ready = false;
     bool _advertising = false;

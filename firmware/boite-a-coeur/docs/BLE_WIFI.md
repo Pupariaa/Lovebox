@@ -22,10 +22,10 @@ SSID max 32 characters, password max 63. Whitespace is trimmed. Empty SSID is re
 
 ## Device behaviour
 
-1. `BacBle::openProvisioning()` starts advertising with `device_name` from `user.txt`.
+1. `BacBle::openProvisioning()` starts advertising with `device_name` from NVS config.
 2. On characteristic write, `BacApp::onWifiProvision()` stores pending SSID/password.
 3. BLE advertising stops on connect; resumes on disconnect if still provisioning.
-4. After successful WiFi join, credentials are saved to `user.txt` and BLE shuts down (`closeProvisioning`).
+4. After successful WiFi join, credentials are saved to NVS and BLE shuts down (`closeProvisioning`).
 5. Failed connect shows `first_wifi_error` or returns to `lost_connection`.
 
 ## When BLE is active

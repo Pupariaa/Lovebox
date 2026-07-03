@@ -1,0 +1,16 @@
+device_name: BaCxs32f0000
+factory_device_name: BaCxs32f0000
+display_name: BaCxs32f0000
+serial_number: BACXS32F00002026R1
+ssid:
+psw:
+configured: 0
+uuid:
+locale: fr
+build_year: 2026
+build_semester: 1
+hw_revision: BaC-S3-v1
+api_url: https://boite-a-coeur.techalchemy.fr
+api_secret:
+region:
+old_boot_status:

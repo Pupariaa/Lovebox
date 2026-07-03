@@ -7,6 +7,7 @@
 #include "BacScreenCache.h"
 #include "BacApp.h"
 #include "BacDebug.h"
+#include "BacSysInfo.h"
 #include "BacSerialConsole.h"
 #include "BacTouch.h"
 #include <esp_task_wdt.h>
@@ -51,11 +52,12 @@ void setup() {
 
     projet::build(ui);
     ui.setTransition(Transition::Fade, 200);
-    ui.begin();
 
     if (!projet::initStorage()) {
         BacDebug::reply("warning: volume assets unavailable");
     }
+
+    ui.begin();
 
     screenCache.begin(ui, &projet::screen_scr_mqxozray1);
     app.begin(ui, screenCache);
@@ -67,6 +69,7 @@ void setup() {
 void loop() {
 #if defined(ESP32)
     serialConsole.poll(app);
+    BacSysInfo::tick();
     uint32_t touchVal = touch.read();
     app.tick(touchVal);
 #else

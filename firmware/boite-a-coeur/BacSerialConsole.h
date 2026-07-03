@@ -7,13 +7,16 @@
 #include <esp_heap_caps.h>
 #include "BacApp.h"
 #include "BacDebug.h"
+#include "BacFirmware.h"
+#include "BacSysInfo.h"
 
 class BacSerialConsole {
 public:
     void begin() {
         _line = "";
+        BacSysInfo::initCpuHooks();
         BacDebug::reply("");
-        BacDebug::reply("BoiteACoeur firmware 1.0.0");
+        BacDebug::reply("BoiteACoeur firmware " BAC_FW_VERSION);
         BacDebug::reply("Serial console ready. Type 'help'.");
         BacDebug::reply("");
     }
@@ -67,6 +70,8 @@ private:
             printUuid(app);
         } else if (cmd == "stats") {
             printStats();
+        } else if (cmd == "sys") {
+            BacSysInfo::printReport();
         } else if (cmd == "debug on") {
             BacDebug::verbose = true;
             BacDebug::reply("debug verbose on");
@@ -91,7 +96,7 @@ private:
     }
 
     static void printHelp() {
-        BacDebug::reply("help info wifi ble mode uuid stats");
+        BacDebug::reply("help info wifi ble mode uuid stats sys");
         BacDebug::reply("wifi join SSID PASSWORD");
         BacDebug::reply("debug [on|off] reload reboot reset");
     }
