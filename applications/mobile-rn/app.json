@@ -1,0 +1,81 @@
+{
+  "expo": {
+    "name": "Boite a coeur",
+    "slug": "boite-a-coeur",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/logo-lovebox.png",
+    "scheme": "boiteacoeur",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "icon": "./assets/images/logo-lovebox.png",
+      "supportsTablet": true,
+      "bundleIdentifier": "fr.techalchemy.boiteacoeur",
+      "infoPlist": {
+        "NSBluetoothAlwaysUsageDescription": "L'application utilise le Bluetooth pour configurer ta boite a coeur.",
+        "NSBluetoothPeripheralUsageDescription": "L'application utilise le Bluetooth pour configurer ta boite a coeur.",
+        "NSPhotoLibraryUsageDescription": "L'application accede a tes photos pour les ajouter a tes messages."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#1A0C12",
+        "foregroundImage": "./assets/images/logo-lovebox.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "package": "fr.techalchemy.boiteacoeur",
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.BLUETOOTH_SCAN",
+        "android.permission.BLUETOOTH_CONNECT",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.BLUETOOTH",
+        "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "output": "static",
+      "favicon": "./assets/images/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#1A0C12",
+          "image": "./assets/images/logo-lovebox.png",
+          "imageWidth": 160
+        }
+      ],
+      [
+        "react-native-ble-plx",
+        {
+          "isBackgroundEnabled": false,
+          "modes": [
+            "central"
+          ],
+          "bluetoothAlwaysPermission": "L'application utilise le Bluetooth pour configurer ta boite a coeur."
+        }
+      ],
+      "expo-secure-store",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "L'application accede a tes photos pour les ajouter a tes messages."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true,
+      "reactCompiler": false
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "b46525a4-43c1-4fcd-aa74-61dc479b364c"
+      }
+    }
+  }
+}
