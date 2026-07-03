@@ -54,11 +54,219 @@
           "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T055410Z",
           "port": "COM120",
           "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T111811Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T111811Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T111849Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T111849Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T113302Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T113302Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T114049Z",
+          "firmware_version": "1.0.2",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T114049Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T114304Z",
+          "firmware_version": "1.0.3",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T114304Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T160856Z",
+          "firmware_version": "1.0.4",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T160856Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T162054Z",
+          "firmware_version": "1.0.5",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T162054Z",
+          "port": "N/A",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T162126Z",
+          "firmware_version": "1.0.5",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T162126Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T162547Z",
+          "firmware_version": "1.0.6",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T162547Z",
+          "port": "N/A",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T162654Z",
+          "firmware_version": "1.0.6",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T162654Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T163039Z",
+          "firmware_version": "1.0.7",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T163039Z",
+          "port": "N/A",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T163042Z",
+          "firmware_version": "1.0.7",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T163042Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T165147Z",
+          "firmware_version": "1.0.8",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T165147Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T171305Z",
+          "firmware_version": "1.0.9",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T171305Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T172511Z",
+          "firmware_version": "1.0.10",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T172511Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
         }
       ],
-      "last_firmware_version": "1.0.1",
-      "last_provisioned_at": "20260703T055410Z"
+      "last_firmware_version": "1.0.10",
+      "last_provisioned_at": "20260703T172511Z"
+    },
+    {
+      "device_name": "BaCxs32a1006",
+      "serial_number": "BACXS32A10062026R2",
+      "uuid": "81342452879336549114319493553562434381834923075135713034005768910881207040553275069472127679462019207917270488676500971908917995",
+      "built_at": "2026-07-03T10:35:14.170636Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32A10062026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260703T103542Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T103542Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T111731Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T111731Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T113359Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T113359Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T113955Z",
+          "firmware_version": "1.0.2",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T113955Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T114354Z",
+          "firmware_version": "1.0.3",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T114354Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T160809Z",
+          "firmware_version": "1.0.4",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T160809Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T162213Z",
+          "firmware_version": "1.0.5",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T162213Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T162606Z",
+          "firmware_version": "1.0.6",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T162606Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T163146Z",
+          "firmware_version": "1.0.7",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T163146Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T164556Z",
+          "firmware_version": "1.0.8",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T164556Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T164710Z",
+          "firmware_version": "1.0.8",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T164710Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T171353Z",
+          "firmware_version": "1.0.9",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T171353Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T172336Z",
+          "firmware_version": "1.0.10",
+          "archive_dir": "factory/archives/BACXS32A10062026R2/20260703T172336Z",
+          "port": "COM82",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.10",
+      "last_provisioned_at": "20260703T172336Z"
     }
   ],
-  "next_suffix": 1006
+  "next_suffix": 1007
 }

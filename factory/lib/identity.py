@@ -74,6 +74,25 @@ def load_device_file(serial: str) -> dict:
     return identity
 
 
+def merge_runtime_config(base: dict, runtime: dict) -> dict:
+    merged = dict(base)
+    for key in (
+        "ssid",
+        "psw",
+        "api_secret",
+        "api_url",
+        "region",
+        "locale",
+        "display_name",
+        "configured",
+        "claimed",
+    ):
+        val = runtime.get(key)
+        if val is not None and str(val).strip() != "":
+            merged[key] = str(val).strip()
+    return merged
+
+
 def parse_user_txt(text: str) -> dict:
     out: dict = {}
     for line in text.splitlines():

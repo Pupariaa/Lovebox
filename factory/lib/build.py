@@ -180,6 +180,36 @@ def read_flash_params() -> dict[str, str]:
     return params
 
 
+def flash_firmware_only(port: str, firmware: Path) -> None:
+    esptool = find_esptool()
+    flash = read_flash_params()
+    args = [
+        str(esptool),
+        "--chip",
+        "esp32s3",
+        "--port",
+        port,
+        "--baud",
+        "921600",
+        "--before",
+        "default-reset",
+        "--after",
+        "hard-reset",
+        "write-flash",
+        "-z",
+        "--flash-mode",
+        flash["mode"],
+        "--flash-freq",
+        flash["freq"],
+        "--flash-size",
+        flash["size"],
+        "0x10000",
+        str(firmware),
+    ]
+    print("flash (firmware only):", " ".join(args))
+    subprocess.run(args, check=True)
+
+
 def flash_all(port: str, artifacts: dict[str, Path]) -> None:
     esptool = find_esptool()
     flash = read_flash_params()

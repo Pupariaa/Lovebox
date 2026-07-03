@@ -13,17 +13,19 @@ from lib.build import (
     build_nvs_image,
     compile_sketch,
     flash_all,
+    flash_firmware_only,
     normalize_version,
     read_version,
     resolve_boot_app0,
     resolve_build_artifact,
 )
-from lib.identity import parse_user_txt
 from lib.config import BUILD_DIR, DEVICES_DIR
 from lib.identity import (
     create_new_identity,
     load_device_file,
     load_registry,
+    merge_runtime_config,
+    parse_user_txt,
     user_txt_content,
 )
 from lib.ports import choose_port, list_serial_ports
@@ -48,6 +50,13 @@ def resolve_identity(args) -> tuple[dict, str]:
     return identity, content
 
 
+def apply_runtime_config(identity_fields: dict, runtime_path: Path) -> dict:
+    runtime = parse_user_txt(runtime_path.read_text(encoding="utf-8"))
+    merged = merge_runtime_config(identity_fields, runtime)
+    print(f"runtime config merged from {runtime_path}")
+    return merged
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Provision BoiteACoeur (build + flash + archive)")
     parser.add_argument("--new", action="store_true", help="Generate new device identity")
@@ -57,9 +66,22 @@ def main() -> None:
     parser.add_argument("--version", help="Firmware version (default: factory/VERSION)")
     parser.add_argument("--build-only", action="store_true", help="Build and archive without flashing")
     parser.add_argument("--skip-flash", action="store_true", help="Build + archive only")
+    parser.add_argument(
+        "--firmware-only",
+        action="store_true",
+        help="Flash app partition only; keep NVS and FFAT (WiFi, claim, secrets)",
+    )
+    parser.add_argument(
+        "--runtime-config",
+        metavar="FILE",
+        help="Merge WiFi/claim/secrets from exported user.txt before full flash",
+    )
     parser.add_argument("--list-ports", action="store_true", help="List serial ports and exit")
     parser.add_argument("--list-devices", action="store_true", help="List registry devices")
     args = parser.parse_args()
+
+    if args.firmware_only and args.runtime_config:
+        raise SystemExit("--firmware-only and --runtime-config are mutually exclusive")
 
     if args.list_ports:
         for port in list_serial_ports():
@@ -95,11 +117,33 @@ def main() -> None:
 
     compile_sketch(version)
 
+    firmware = resolve_build_artifact("boite-a-coeur.ino.bin")
+
+    if args.firmware_only:
+        port = choose_port(args.port) if not args.build_only and not args.skip_flash else (args.port or "N/A")
+        artifacts = {"firmware": firmware}
+        archive_dir = archive_provision(serial, identity, version, port, artifacts, user_txt)
+        print(f"archive: {archive_dir}")
+        if args.build_only or args.skip_flash:
+            print("build complete (no flash)")
+            return
+        flash_firmware_only(port, firmware)
+        print("firmware-only flash complete (NVS/FFAT preserved)")
+        print(json.dumps({"serial_number": serial, "firmware_version": version, "archive": str(archive_dir)}, indent=2))
+        return
+
     ffat_bin = BUILD_DIR / "ffat.bin"
     build_ffat_image(ffat_bin)
 
     identity_fields = parse_user_txt(user_txt)
     identity_fields.setdefault("serial_number", serial)
+    if args.runtime_config:
+        runtime_path = Path(args.runtime_config)
+        if not runtime_path.is_file():
+            raise SystemExit(f"runtime config not found: {runtime_path}")
+        identity_fields = apply_runtime_config(identity_fields, runtime_path)
+        user_txt = "\n".join(f"{k}: {v}" for k, v in identity_fields.items()) + "\n"
+
     nvs_bin = BUILD_DIR / "nvs.bin"
     build_nvs_image(identity_fields, nvs_bin)
 
@@ -107,7 +151,7 @@ def main() -> None:
         "bootloader": resolve_build_artifact("boite-a-coeur.ino.bootloader.bin"),
         "partitions": resolve_build_artifact("boite-a-coeur.ino.partitions.bin"),
         "boot_app0": resolve_boot_app0(),
-        "firmware": resolve_build_artifact("boite-a-coeur.ino.bin"),
+        "firmware": firmware,
         "nvs": nvs_bin,
         "ffat": ffat_bin,
     }

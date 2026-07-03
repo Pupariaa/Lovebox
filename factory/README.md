@@ -32,6 +32,27 @@ python factory\provision.py --new --port COM5 --version 1.0.1
 python factory\provision.py --serial BACXS32W23262026R2 --port COM5
 ```
 
+### Firmware update without losing WiFi / claim
+
+Full provision rewrites NVS (`configured`, `claimed`, WiFi, `api_secret` reset). For dev firmware updates on an already configured box:
+
+```powershell
+python factory\provision.py --serial BACXS32P10052026R2 --port COM120 --firmware-only
+python factory\provision.py --serial BACXS32A10062026R2 --port COM82 --firmware-only
+```
+
+Only the app partition at `0x10000` is written; NVS and FFAT stay intact.
+
+### Full reflash while keeping runtime config
+
+On the device serial monitor, run `export config` and save the output to a file. Then:
+
+```powershell
+python factory\provision.py --serial BACXS32P10052026R2 --port COM120 --runtime-config runtime.txt
+```
+
+Factory identity (`uuid`, serial) comes from `factory/devices/{SERIAL}.user.txt`; WiFi, secrets, and claim flags are taken from the export file.
+
 ## What gets flashed
 
 | Partition | Content |
@@ -76,7 +97,7 @@ Admin UI: `/public/updates/` section **Test device**.
 
 ## Version bump
 
-Edit `factory/VERSION` before provision, or pass `--version X.Y.Z`.
+Edit `factory/VERSION` before provision, or pass `--version X.Y.Z`. Current release: **1.0.10**.
 
 ## Build without flash
 
