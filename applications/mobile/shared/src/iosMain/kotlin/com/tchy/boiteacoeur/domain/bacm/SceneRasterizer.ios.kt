@@ -12,14 +12,19 @@ actual class SceneRasterizer actual constructor() {
 
     actual fun bakeImage(bg: ShortArray, layer: MessageLayer, imageBytes: ByteArray) {}
 
-    actual fun bakeIconFrame(bg: ShortArray, layer: MessageLayer, frame: ShortArray) {
-        val side = layer.size
-        for (y in 0 until side) {
-            for (x in 0 until side) {
-                val fg = frame.getOrElse(y * side + x) { 0 }
-                val bi = (layer.y + y) * AppConfig.MSG_WIDTH + (layer.x + x)
-                if (bi in bg.indices) bg[bi] = fg
-            }
-        }
+    actual fun bakeIconFrame(bg: ShortArray, layer: MessageLayer, frame: IconFrameData) {
+        compositeFrameOnBg(
+            bg = bg,
+            bgW = AppConfig.MSG_WIDTH,
+            bgH = AppConfig.MSG_HEIGHT,
+            frame = frame.pixels,
+            frameW = frame.side,
+            frameH = frame.side,
+            alpha = frame.alpha,
+            dx = layer.x,
+            dy = layer.y,
+            dw = layer.size,
+            dh = layer.size,
+        )
     }
 }

@@ -13,19 +13,10 @@ object BacMessagePack {
             MessageLayer(
                 id = "t1",
                 type = "text",
-                text = "Nouveau message",
-                y = 58,
+                text = "Ton message",
+                y = 100,
                 h = 40,
-            ),
-            MessageLayer(
-                id = "i1",
-                type = "icon",
-                ref = "emoji:1f48c",
-                x = 108,
-                y = 108,
-                size = 64,
-                anim = true,
-                fps = 12,
+                color = "#FFF5F0",
             ),
         ),
     )
@@ -33,7 +24,7 @@ object BacMessagePack {
     suspend fun buildFromScene(
         scene: MessageScene,
         rasterizer: SceneRasterizer,
-        animFrames: suspend (String, Int) -> List<ShortArray>?,
+        animFrames: suspend (String, Int) -> List<IconFrameData>?,
     ): ByteArray {
         val bg = rasterizer.rasterBackground(scene)
         val layers = mutableListOf<AnimLayer>()
@@ -73,31 +64,25 @@ object BacMessagePack {
     private fun buildAnimLayer(
         bg: ShortArray,
         layer: MessageLayer,
-        frames: List<ShortArray>,
+        frames: List<IconFrameData>,
         fps: Int,
     ): AnimLayer {
         val side = layer.size
         val framePixels = ShortArray(side * side * frames.size)
         frames.forEachIndexed { index, frame ->
-            val crop = ShortArray(side * side)
-            for (y in 0 until side) {
-                for (x in 0 until side) {
-                    val fg = frame.getOrElse(y * side + x) { 0 }.toInt() and 0xFFFF
-                    val bi = (layer.y + y) * AppConfig.MSG_WIDTH + (layer.x + x)
-                    if (bi in bg.indices) crop[y * side + x] = bg[bi]
-                    compositePixel(crop, x, y, side, fg, 255)
-                }
-            }
+            val composed = compositeIconOnBgCopy(
+                bg = bg,
+                layerX = layer.x,
+                layerY = layer.y,
+                side = side,
+                frame = frame.pixels,
+                frameSide = frame.side,
+                alpha = frame.alpha,
+            )
+            val crop = cropRect(composed, AppConfig.MSG_WIDTH, layer.x, layer.y, side, side)
             crop.copyInto(framePixels, index * side * side)
         }
         return AnimLayer(LAYER_ANIM, layer.x, layer.y, side, side, fps, frames.size, framePixels)
-    }
-
-    private fun compositePixel(pixels: ShortArray, x: Int, y: Int, w: Int, fg: Int, alpha: Int) {
-        val h = if (w > 0) pixels.size / w else 0
-        if (x !in 0 until w || y !in 0 until h) return
-        val i = y * w + x
-        pixels[i] = if (alpha >= 250) fg.toShort() else blend565(pixels[i].toInt() and 0xFFFF, fg, alpha).toShort()
     }
 
     fun blend565(bg: Int, fg: Int, alpha: Int): Int {

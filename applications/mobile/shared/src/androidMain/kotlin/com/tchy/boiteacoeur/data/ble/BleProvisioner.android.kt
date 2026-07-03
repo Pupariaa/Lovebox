@@ -41,6 +41,10 @@ actual class BleProvisioner actual constructor() {
         service = AppConfig.BLE_SERVICE_UUID,
         characteristic = AppConfig.BLE_DEVICE_INFO_CHAR_UUID,
     )
+    private val configCharacteristic = characteristicOf(
+        service = AppConfig.BLE_SERVICE_UUID,
+        characteristic = AppConfig.BLE_CONFIG_CHAR_UUID,
+    )
     private var boxIdentity: BleBoxIdentity? = null
     private val statusCharacteristic = characteristicOf(
         service = AppConfig.BLE_SERVICE_UUID,
@@ -94,6 +98,18 @@ actual class BleProvisioner actual constructor() {
         val payload = "$ssid|$password".encodeToByteArray()
         if (payload.size > 127) throw IllegalArgumentException("payload too large")
         writeWifiCredentials(p, payload)
+        delay(POST_WRITE_DELAY_MS)
+    }
+
+    actual suspend fun sendDeviceConfig(displayName: String, locale: String, region: String) {
+        val p = peripheral ?: throw IllegalStateException("not connected")
+        val payload = "${displayName.trim()}|${locale.trim()}|${region.trim()}".encodeToByteArray()
+        if (payload.size > 191) throw IllegalArgumentException("payload too large")
+        try {
+            p.write(configCharacteristic, payload, WriteType.WithResponse)
+        } catch (_: Exception) {
+            p.write(configCharacteristic, payload, WriteType.WithoutResponse)
+        }
         delay(POST_WRITE_DELAY_MS)
     }
 
@@ -232,12 +248,8 @@ actual class BleProvisioner actual constructor() {
 
     private suspend fun readBoxIdentity(p: Peripheral): BleBoxIdentity? {
         return runCatching {
-            val raw = p.read(deviceInfoCharacteristic).decodeToString().trim()
-            val parts = raw.split('|', limit = 2)
-            val name = parts.getOrNull(0)?.trim().orEmpty()
-            val serial = parts.getOrNull(1)?.trim()?.takeIf { it.isNotBlank() }
-            if (!isUsableDeviceName(name)) return@runCatching null
-            BleBoxIdentity(name, serial)
+            val raw = p.read(deviceInfoCharacteristic).decodeToString()
+            parseBleBoxIdentity(raw)
         }.getOrNull()
     }
 
@@ -247,11 +259,7 @@ actual class BleProvisioner actual constructor() {
         }.getOrNull()
     }
 
-    private fun isUsableDeviceName(name: String): Boolean {
-        val trimmed = name.trim()
-        if (trimmed.isBlank()) return false
-        return !trimmed.equals(DEFAULT_BLE_NAME, ignoreCase = true)
-    }
+    private fun isUsableDeviceName(name: String): Boolean = isUsableBleDeviceName(name)
 
     private fun preferName(candidate: String, current: String): Boolean {
         if (!isUsableDeviceName(current)) return isUsableDeviceName(candidate)

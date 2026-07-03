@@ -4,14 +4,18 @@ import com.tchy.boiteacoeur.AppConfig
 import com.tchy.boiteacoeur.data.model.ApiError
 import com.tchy.boiteacoeur.data.model.AuthResponse
 import com.tchy.boiteacoeur.data.model.DeviceMeResponse
-import com.tchy.boiteacoeur.data.model.InviteResponse
+import com.tchy.boiteacoeur.data.model.DeviceUpdateResponse
+import com.tchy.boiteacoeur.data.model.PairingCodeResponse
 import com.tchy.boiteacoeur.data.model.PairingStateResponse
 import com.tchy.boiteacoeur.data.model.SendMessageResponse
 import com.tchy.boiteacoeur.data.model.SentMessagesResponse
+import com.tchy.boiteacoeur.data.model.UserProfileDto
+import com.tchy.boiteacoeur.data.model.UserProfileResponse
 import com.tchy.boiteacoeur.data.storage.TokenStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
+import io.ktor.client.request.delete
 import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.patch
@@ -66,14 +70,14 @@ class ApiClient(private val tokens: TokenStorage) {
         tokens.clear()
     }
 
-    suspend fun claimDevice(deviceName: String, serialNumber: String? = null): DeviceMeResponse =
+    suspend fun claimDevice(uuid: String, serialNumber: String): DeviceUpdateResponse =
         authRequest { token ->
             client.post("${AppConfig.API_BASE}/api/v1/devices/claim") {
                 header("Authorization", "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject {
-                    put("device_name", deviceName)
-                    serialNumber?.takeIf { it.isNotBlank() }?.let { put("serial_number", it) }
+                    put("uuid", uuid.trim())
+                    put("serial_number", serialNumber.trim())
                 })
             }.bodyOrThrow()
         }
@@ -85,17 +89,29 @@ class ApiClient(private val tokens: TokenStorage) {
             }.bodyOrThrow()
         }
 
-    suspend fun updateDevice(deviceName: String?, regionOverride: String?): DeviceMeResponse =
+    suspend fun updateDevice(
+        deviceId: Long,
+        displayName: String?,
+        regionOverride: String?,
+    ): DeviceUpdateResponse =
         authRequest { token ->
-            client.patch("${AppConfig.API_BASE}/api/v1/devices/me") {
+            client.patch("${AppConfig.API_BASE}/api/v1/devices/$deviceId") {
                 header("Authorization", "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject {
-                    deviceName?.let { put("device_name", it) }
+                    displayName?.let { put("display_name", it) }
                     regionOverride?.let { put("region_override", it) }
                 })
             }.bodyOrThrow()
         }
+
+    suspend fun unclaimDevice(deviceId: Long) {
+        authRequest { token ->
+            client.delete("${AppConfig.API_BASE}/api/v1/devices/$deviceId/claim") {
+                header("Authorization", "Bearer $token")
+            }.requireSuccess()
+        }
+    }
 
     suspend fun getPairingState(): PairingStateResponse =
         authRequest { token ->
@@ -104,53 +120,76 @@ class ApiClient(private val tokens: TokenStorage) {
             }.bodyOrThrow()
         }
 
-    suspend fun createInvite(): InviteResponse =
+    suspend fun generatePairingCode(deviceId: Long? = null): PairingCodeResponse =
         authRequest { token ->
-            client.post("${AppConfig.API_BASE}/api/v1/pairings/invite") {
+            client.post("${AppConfig.API_BASE}/api/v1/pairings/code/generate") {
                 header("Authorization", "Bearer $token")
-            }.bodyOrThrow()
-        }
-
-    suspend fun acceptInvite(token: String): PairingStateResponse =
-        authRequest { access ->
-            client.post("${AppConfig.API_BASE}/api/v1/pairings/accept-invite") {
-                header("Authorization", "Bearer $access")
                 contentType(ContentType.Application.Json)
-                setBody(buildJsonObject { put("token", token) })
+                if (deviceId != null) {
+                    setBody(buildJsonObject { put("device_id", deviceId) })
+                }
             }.bodyOrThrow()
         }
 
-    suspend fun requestPairing(deviceName: String?, uuid: String?): PairingStateResponse =
+    suspend fun acceptPairingCode(code: String, deviceId: Long? = null): PairingStateResponse =
         authRequest { token ->
-            client.post("${AppConfig.API_BASE}/api/v1/pairings/request") {
+            client.post("${AppConfig.API_BASE}/api/v1/pairings/code/accept") {
                 header("Authorization", "Bearer $token")
                 contentType(ContentType.Application.Json)
                 setBody(buildJsonObject {
-                    deviceName?.let { put("device_name", it) }
-                    uuid?.let { put("uuid", it) }
+                    put("code", code.trim())
+                    deviceId?.let { put("device_id", it) }
                 })
             }.bodyOrThrow()
         }
 
-    suspend fun acceptPairing(pairingId: Long) {
+    suspend fun unlinkPairing(pairingId: Long) {
         authRequest { token ->
-            client.post("${AppConfig.API_BASE}/api/v1/pairings/$pairingId/accept") {
+            client.delete("${AppConfig.API_BASE}/api/v1/pairings/$pairingId") {
                 header("Authorization", "Bearer $token")
             }.requireSuccess()
         }
     }
 
-    suspend fun rejectPairing(pairingId: Long) {
+    suspend fun getUserProfile(): UserProfileDto =
         authRequest { token ->
-            client.post("${AppConfig.API_BASE}/api/v1/pairings/$pairingId/reject") {
+            client.get("${AppConfig.API_BASE}/api/v1/users/me") {
                 header("Authorization", "Bearer $token")
-            }.requireSuccess()
+            }.bodyOrThrow<UserProfileResponse>().user
         }
-    }
 
-    suspend fun sendMessage(targetDeviceId: Long, bacm: ByteArray): SendMessageResponse =
+    suspend fun updateUserProfile(
+        firstName: String? = null,
+        lastName: String? = null,
+        locale: String? = null,
+        password: String? = null,
+    ): UserProfileDto =
         authRequest { token ->
-            client.post("${AppConfig.API_BASE}/api/v1/messages?target_device_id=$targetDeviceId") {
+            client.patch("${AppConfig.API_BASE}/api/v1/users/me") {
+                header("Authorization", "Bearer $token")
+                contentType(ContentType.Application.Json)
+                setBody(buildJsonObject {
+                    firstName?.let { put("first_name", it) }
+                    lastName?.let { put("last_name", it) }
+                    locale?.let { put("locale", it) }
+                    password?.let { put("password", it) }
+                })
+            }.bodyOrThrow<UserProfileResponse>().user
+        }
+
+    suspend fun sendMessage(
+        targetDeviceId: Long,
+        bacm: ByteArray,
+        scheduledAt: String? = null,
+    ): SendMessageResponse =
+        authRequest { token ->
+            val query = buildString {
+                append("target_device_id=$targetDeviceId")
+                if (!scheduledAt.isNullOrBlank()) {
+                    append("&scheduled_at=${scheduledAt.trim()}")
+                }
+            }
+            client.post("${AppConfig.API_BASE}/api/v1/messages?$query") {
                 header("Authorization", "Bearer $token")
                 contentType(ContentType.Application.OctetStream)
                 setBody(bacm)
@@ -222,12 +261,22 @@ fun parseApiErrorMessage(text: String): String {
 fun mapApiError(message: String): String = when {
     message.contains("device not found", ignoreCase = true) ->
         "La boîte n'est pas encore enregistrée sur le serveur. Attends une minute puis réessaie l'association."
+    message.contains("invalid uuid", ignoreCase = true) ->
+        "Identifiant de boîte invalide"
+    message.contains("invalid serial", ignoreCase = true) ->
+        "Numéro de série invalide"
+    message.contains("serial_number mismatch", ignoreCase = true) ->
+        "Le numéro de série ne correspond pas à la boîte"
     message.contains("invalid device name", ignoreCase = true) ->
         "Nom de boîte invalide"
     message.contains("user already owns a device", ignoreCase = true) ->
         "Tu as déjà une boîte liée à ce compte. Déconnecte-la d'abord ou utilise un autre compte."
     message.contains("device already claimed", ignoreCase = true) ->
         "Cette boîte est déjà associée à un compte"
+    message.contains("invalid or expired code", ignoreCase = true) ->
+        "Code invalide ou expiré"
+    message.contains("invalid code", ignoreCase = true) ->
+        "Code invalide"
     message.contains("invalid credentials", ignoreCase = true) ->
         "Email ou mot de passe incorrect"
     message.contains("email already registered", ignoreCase = true) ->

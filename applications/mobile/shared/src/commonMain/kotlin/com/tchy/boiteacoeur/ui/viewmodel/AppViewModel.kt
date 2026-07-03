@@ -1,6 +1,7 @@
 package com.tchy.boiteacoeur.ui.viewmodel
 
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.tchy.boiteacoeur.data.api.ApiClient
@@ -12,8 +13,8 @@ import com.tchy.boiteacoeur.data.model.DeviceDto
 import com.tchy.boiteacoeur.data.model.LinkedTargetDto
 import com.tchy.boiteacoeur.data.model.MessageScene
 import com.tchy.boiteacoeur.data.model.OwnedDeviceDto
-import com.tchy.boiteacoeur.data.model.PendingRequestDto
 import com.tchy.boiteacoeur.data.model.SentMessageDto
+import com.tchy.boiteacoeur.data.model.UserProfileDto
 import com.tchy.boiteacoeur.data.storage.TokenStorage
 import com.tchy.boiteacoeur.domain.bacm.BacMessagePack
 import com.tchy.boiteacoeur.domain.bacm.EmojiFrameLoader
@@ -22,6 +23,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -34,40 +38,64 @@ class AppViewModel {
 
     var isLoggedIn by mutableStateOf(false)
     var loading by mutableStateOf(false)
-    var snackbarMessage by mutableStateOf<String?>(null)
 
-    var ownedDevice by mutableStateOf<OwnedDeviceDto?>(null)
+    private val _snackbarMessage = MutableStateFlow<String?>(null)
+    val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
+
+    var devices by mutableStateOf<List<DeviceDto>>(emptyList())
     var myDevice by mutableStateOf<DeviceDto?>(null)
+    var selectedDeviceId by mutableLongStateOf(0L)
+    var ownedDevices by mutableStateOf<List<OwnedDeviceDto>>(emptyList())
+    var ownedDevice by mutableStateOf<OwnedDeviceDto?>(null)
+    var linkedTargets by mutableStateOf<List<LinkedTargetDto>>(emptyList())
     var linkedTarget by mutableStateOf<LinkedTargetDto?>(null)
-    var pendingRequests by mutableStateOf<List<PendingRequestDto>>(emptyList())
-    var inviteUrl by mutableStateOf<String?>(null)
+    var selectedTarget by mutableStateOf<LinkedTargetDto?>(null)
+    var userProfile by mutableStateOf<UserProfileDto?>(null)
+
+    var pairingCode by mutableStateOf<String?>(null)
+    var pairingCodeCopied by mutableStateOf(false)
 
     var bleDevices by mutableStateOf<List<BleDeviceItem>>(emptyList())
     var bleProvisionPhase by mutableStateOf(BleProvisionPhase.Idle)
     var bleProvisionError by mutableStateOf<String?>(null)
     var bleProvisionDeviceName by mutableStateOf<String?>(null)
     var bleProvisionSerialNumber by mutableStateOf<String?>(null)
+    var bleProvisionUuid by mutableStateOf<String?>(null)
     var bleWifiProvisioned by mutableStateOf(false)
-    var claimDeviceName by mutableStateOf("")
-    var pairDeviceName by mutableStateOf("")
+    var claimUuid by mutableStateOf("")
+    var claimSerialNumber by mutableStateOf("")
 
     var composerScene by mutableStateOf(BacMessagePack.createDefaultScene())
+    var scheduledSendAt by mutableStateOf("")
     var history by mutableStateOf<List<SentMessageDto>>(emptyList())
 
-    var pendingInviteToken: String? = null
     var forceAuth by mutableStateOf(false)
 
     fun clearSnackbar() {
-        snackbarMessage = null
+        _snackbarMessage.value = null
+    }
+
+    private fun showMessage(message: String) {
+        _snackbarMessage.value = message
+    }
+
+    fun showSnackbar(message: String) {
+        showMessage(message)
     }
 
     private fun clearSession() {
         api.clearLocalSession()
         isLoggedIn = false
-        ownedDevice = null
+        devices = emptyList()
         myDevice = null
+        selectedDeviceId = 0L
+        ownedDevices = emptyList()
+        ownedDevice = null
+        linkedTargets = emptyList()
         linkedTarget = null
-        pendingRequests = emptyList()
+        selectedTarget = null
+        userProfile = null
+        pairingCode = null
         forceAuth = true
     }
 
@@ -93,18 +121,35 @@ class AppViewModel {
     }
 
     private suspend fun loadRemoteState() {
-        myDevice = api.getMyDevice().device
-        val pairing = api.getPairingState()
-        ownedDevice = pairing.ownedDevice
-        linkedTarget = pairing.linkedTarget
-        pendingRequests = pairing.pendingRequests
-        pendingInviteToken?.let { token ->
-            api.acceptInvite(token)
-            pendingInviteToken = null
-            val refreshed = api.getPairingState()
-            linkedTarget = refreshed.linkedTarget
-            snackbarMessage = "Invitation acceptée"
+        val deviceResponse = api.getMyDevice()
+        devices = deviceResponse.devices
+        myDevice = deviceResponse.device ?: devices.firstOrNull()
+        if (selectedDeviceId == 0L || devices.none { it.id == selectedDeviceId }) {
+            selectedDeviceId = myDevice?.id ?: 0L
         }
+        myDevice = devices.find { it.id == selectedDeviceId } ?: devices.firstOrNull()
+
+        val pairing = api.getPairingState()
+        ownedDevices = pairing.ownedDevices
+        ownedDevice = pairing.ownedDevice ?: ownedDevices.firstOrNull()
+        linkedTargets = pairing.linkedTargets
+        linkedTarget = pairing.linkedTarget ?: linkedTargets.firstOrNull()
+        if (selectedTarget == null || linkedTargets.none { it.deviceId == selectedTarget?.deviceId }) {
+            selectedTarget = linkedTarget
+        } else {
+            selectedTarget = linkedTargets.find { it.deviceId == selectedTarget?.deviceId }
+        }
+
+        userProfile = runCatching { api.getUserProfile() }.getOrNull()
+    }
+
+    fun selectDevice(deviceId: Long) {
+        selectedDeviceId = deviceId
+        myDevice = devices.find { it.id == deviceId }
+    }
+
+    fun selectTarget(target: LinkedTargetDto) {
+        selectedTarget = target
     }
 
     fun login(email: String, password: String, onSuccess: () -> Unit) {
@@ -114,10 +159,10 @@ class AppViewModel {
                 .onSuccess {
                     isLoggedIn = true
                     runCatching { loadRemoteState() }
-                        .onFailure { snackbarMessage = userMessage(it) }
+                        .onFailure { showMessage(userMessage(it)) }
                     onSuccess()
                 }
-                .onFailure { snackbarMessage = userMessage(it) }
+                .onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
@@ -129,10 +174,10 @@ class AppViewModel {
                 .onSuccess {
                     isLoggedIn = true
                     runCatching { loadRemoteState() }
-                        .onFailure { snackbarMessage = userMessage(it) }
+                        .onFailure { showMessage(userMessage(it)) }
                     onSuccess()
                 }
-                .onFailure { snackbarMessage = userMessage(it) }
+                .onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
@@ -140,10 +185,8 @@ class AppViewModel {
     fun logout() {
         scope.launch {
             runCatching { api.logout() }
+            clearSession()
             isLoggedIn = false
-            ownedDevice = null
-            myDevice = null
-            linkedTarget = null
         }
     }
 
@@ -155,7 +198,7 @@ class AppViewModel {
                     if (error is ApiException && error.status == 401) {
                         clearSession()
                     } else {
-                        snackbarMessage = userMessage(error)
+                        showMessage(userMessage(error))
                     }
                 }
             loading = false
@@ -166,7 +209,7 @@ class AppViewModel {
         scope.launch {
             loading = true
             runCatching { bleDevices = ble.scan() }
-                .onFailure { snackbarMessage = userMessage(it) }
+                .onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
@@ -176,6 +219,7 @@ class AppViewModel {
         bleProvisionError = null
         bleWifiProvisioned = false
         bleProvisionSerialNumber = null
+        bleProvisionUuid = null
     }
 
     fun provisionBle(
@@ -216,6 +260,7 @@ class AppViewModel {
             }
             bleProvisionDeviceName = resolvedName
             bleProvisionSerialNumber = identity?.serialNumber?.trim()?.takeIf { it.isNotBlank() }
+            bleProvisionUuid = identity?.uuid?.trim()?.takeIf { it.isNotBlank() }
 
             bleProvisionPhase = BleProvisionPhase.SendingWifi
             val sendResult = withContext(Dispatchers.IO) {
@@ -254,8 +299,8 @@ class AppViewModel {
             bleProvisionPhase = BleProvisionPhase.LinkingAccount
             runCatching {
                 claimDeviceWhenOnline(
-                    deviceName = bleProvisionDeviceName?.trim().orEmpty().ifBlank { deviceName.trim() },
-                    serialNumber = bleProvisionSerialNumber,
+                    uuid = bleProvisionUuid.orEmpty(),
+                    serialNumber = bleProvisionSerialNumber.orEmpty(),
                 )
                 loadRemoteState()
                 bleProvisionPhase = BleProvisionPhase.Success
@@ -269,12 +314,18 @@ class AppViewModel {
         }
     }
 
-    private suspend fun claimDeviceWhenOnline(deviceName: String, serialNumber: String? = null) {
+    private suspend fun claimDeviceWhenOnline(uuid: String, serialNumber: String) {
+        if (uuid.length != 128 || !uuid.all { it.isDigit() }) {
+            throw ApiException("Identifiant de boîte invalide", 400)
+        }
+        if (serialNumber.isBlank()) {
+            throw ApiException("Numéro de série manquant", 400)
+        }
         delay(CLAIM_INITIAL_DELAY_MS)
         repeat(CLAIM_RETRY_COUNT) { attempt ->
             bleProvisionPhase = BleProvisionPhase.LinkingAccount
             runCatching {
-                api.claimDevice(deviceName, serialNumber)
+                api.claimDevice(uuid, serialNumber)
                 return
             }.onFailure { error ->
                 if (isClaimRetryable(error) && attempt < CLAIM_RETRY_COUNT - 1) {
@@ -314,9 +365,10 @@ class AppViewModel {
     }
 
     fun retryClaimAfterProvision(onFinished: (success: Boolean) -> Unit) {
-        val name = bleProvisionDeviceName?.trim().orEmpty()
-        if (name.isBlank()) {
-            bleProvisionError = "Nom de boîte manquant"
+        val uuid = bleProvisionUuid?.trim().orEmpty()
+        val serial = bleProvisionSerialNumber?.trim().orEmpty()
+        if (uuid.isBlank() || serial.isBlank()) {
+            bleProvisionError = "Identité de boîte incomplète"
             onFinished(false)
             return
         }
@@ -325,7 +377,7 @@ class AppViewModel {
             bleProvisionError = null
             bleProvisionPhase = BleProvisionPhase.LinkingAccount
             runCatching {
-                claimDeviceWhenOnline(name, bleProvisionSerialNumber)
+                claimDeviceWhenOnline(uuid, serial)
                 loadRemoteState()
                 bleProvisionPhase = BleProvisionPhase.Success
                 onFinished(true)
@@ -342,74 +394,73 @@ class AppViewModel {
         scope.launch {
             loading = true
             runCatching {
-                api.claimDevice(claimDeviceName.trim())
+                api.claimDevice(claimUuid.trim(), claimSerialNumber.trim())
                 loadRemoteState()
-                snackbarMessage = "Boîte liée au compte"
+                showMessage("Boîte liée au compte")
                 onDone()
-            }.onFailure { snackbarMessage = userMessage(it) }
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
 
-    fun createInvite() {
+    fun generatePairingCode() {
         scope.launch {
             loading = true
+            pairingCodeCopied = false
             runCatching {
-                inviteUrl = api.createInvite().url
-            }.onFailure { snackbarMessage = userMessage(it) }
+                val deviceId = if (devices.size > 1) selectedDeviceId.takeIf { it > 0 } else null
+                pairingCode = api.generatePairingCode(deviceId).code
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
 
-    fun requestPairing() {
+    fun markPairingCodeCopied() {
+        pairingCodeCopied = true
+        showMessage("Code copié")
+    }
+
+    fun acceptPairingCode(code: String) {
         scope.launch {
             loading = true
             runCatching {
-                api.requestPairing(
-                    deviceName = pairDeviceName.trim().ifBlank { null },
-                    uuid = null,
-                )
-                snackbarMessage = "Demande envoyée"
-            }.onFailure { snackbarMessage = userMessage(it) }
+                val deviceId = if (devices.size > 1) selectedDeviceId.takeIf { it > 0 } else null
+                api.acceptPairingCode(code, deviceId)
+                loadRemoteState()
+                showMessage("Contact lié")
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
 
-    fun acceptPairing(pairingId: Long) {
+    fun unlinkTarget(pairingId: Long) {
         scope.launch {
             loading = true
             runCatching {
-                api.acceptPairing(pairingId)
-                refreshState()
-            }.onFailure { snackbarMessage = userMessage(it) }
+                api.unlinkPairing(pairingId)
+                loadRemoteState()
+                showMessage("Contact retiré")
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
 
-    fun rejectPairing(pairingId: Long) {
-        scope.launch {
-            runCatching {
-                api.rejectPairing(pairingId)
-                refreshState()
-            }.onFailure { snackbarMessage = userMessage(it) }
-        }
-    }
-
-    fun acceptInviteToken(token: String) {
+    fun unclaimDevice(deviceId: Long, onDone: () -> Unit) {
         scope.launch {
             loading = true
             runCatching {
-                api.acceptInvite(token)
-                refreshState()
-                snackbarMessage = "Boîte partenaire liée"
-            }.onFailure { snackbarMessage = userMessage(it) }
+                api.unclaimDevice(deviceId)
+                loadRemoteState()
+                showMessage("Boîte dissociée")
+                onDone()
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
 
     fun sendMessage(onSent: () -> Unit) {
-        val target = linkedTarget ?: run {
-            snackbarMessage = "Aucune boîte liée"
+        val target = selectedTarget ?: linkedTarget ?: run {
+            showMessage("Aucun contact lié")
             return
         }
         scope.launch {
@@ -418,10 +469,11 @@ class AppViewModel {
                 val bacm = BacMessagePack.buildFromScene(composerScene, rasterizer) { ref, size ->
                     EmojiFrameLoader.loadFrames(ref, size)
                 }
-                api.sendMessage(target.deviceId, bacm)
-                snackbarMessage = "Message envoyé"
+                val scheduled = scheduledSendAt.trim().ifBlank { null }
+                api.sendMessage(target.deviceId, bacm, scheduled)
+                showMessage("Message envoyé")
                 onSent()
-            }.onFailure { snackbarMessage = userMessage(it) }
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
@@ -431,24 +483,72 @@ class AppViewModel {
             loading = true
             runCatching {
                 history = api.listSentMessages().items
-            }.onFailure { snackbarMessage = userMessage(it) }
+            }.onFailure { showMessage(userMessage(it)) }
             loading = false
         }
     }
 
-    fun updateDeviceName(name: String) {
+    fun updateDeviceSettings(displayName: String, regionOverride: String) {
+        val deviceId = selectedDeviceId.takeIf { it > 0 } ?: myDevice?.id ?: return
         scope.launch {
+            loading = true
             runCatching {
-                myDevice = api.updateDevice(deviceName = name, regionOverride = null).device
-            }.onFailure { snackbarMessage = userMessage(it) }
+                val response = api.updateDevice(
+                    deviceId = deviceId,
+                    displayName = displayName.trim(),
+                    regionOverride = regionOverride.trim().ifBlank { "" },
+                )
+                response.device?.let { updated ->
+                    devices = devices.map { if (it.id == updated.id) updated else it }
+                    if (myDevice?.id == updated.id) myDevice = updated
+                }
+                pushDeviceConfigViaBle(displayName.trim(), regionOverride.trim())
+                showMessage("Réglages enregistrés")
+            }.onFailure { showMessage(userMessage(it)) }
+            loading = false
         }
     }
 
-    fun updateRegion(region: String) {
+    private suspend fun pushDeviceConfigViaBle(displayName: String, region: String) {
+        val locale = userProfile?.locale?.ifBlank { "fr" } ?: "fr"
+        val deviceName = myDevice?.deviceName ?: bleProvisionDeviceName ?: return
+        withContext(Dispatchers.IO) {
+            runCatching {
+                val candidates = ble.scan(6_000)
+                val match = candidates.firstOrNull {
+                    it.name.equals(deviceName, ignoreCase = true) ||
+                        it.name.equals(displayName, ignoreCase = true)
+                } ?: return@runCatching
+                ble.connect(match.address, match.name)
+                ble.sendDeviceConfig(displayName, locale, region)
+                ble.disconnect()
+            }
+        }
+    }
+
+    fun loadUserProfile() {
         scope.launch {
             runCatching {
-                myDevice = api.updateDevice(deviceName = null, regionOverride = region).device
-            }.onFailure { snackbarMessage = userMessage(it) }
+                userProfile = api.getUserProfile()
+            }.onFailure { showMessage(userMessage(it)) }
+        }
+    }
+
+    fun updateUserProfile(
+        firstName: String?,
+        lastName: String?,
+        locale: String?,
+        password: String?,
+        onDone: () -> Unit = {},
+    ) {
+        scope.launch {
+            loading = true
+            runCatching {
+                userProfile = api.updateUserProfile(firstName, lastName, locale, password)
+                showMessage("Profil mis à jour")
+                onDone()
+            }.onFailure { showMessage(userMessage(it)) }
+            loading = false
         }
     }
 }

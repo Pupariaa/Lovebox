@@ -1,29 +1,58 @@
 package com.tchy.boiteacoeur.domain.bacm
 
 import com.tchy.boiteacoeur.platform.PlatformContext
-import java.io.InputStream
+import kotlin.math.sqrt
 
 actual object EmojiFrameLoader {
-    actual suspend fun loadFrames(ref: String, size: Int): List<ShortArray>? {
-        val emojiId = ref.removePrefix("emoji:").ifBlank { return null }
-        val folder = emojiFolderName(emojiId) ?: return null
-        val frames = mutableListOf<ShortArray>()
+    private val frameCache = mutableMapOf<String, List<IconFrameData>>()
+
+    actual suspend fun loadFrames(ref: String, size: Int): List<IconFrameData>? {
+        val cacheKey = "$ref@$size"
+        frameCache[cacheKey]?.let { return it }
+        val folder = resolveEmojiFolder(ref) ?: return null
+        val static = readAsset("emojis/$folder/s.rgb565")
+        if (static != null) {
+            val decoded = decodeFrame(static, readAsset("emojis/$folder/s.alpha"), size)
+            val frames = listOf(decoded)
+            frameCache[cacheKey] = frames
+            return frames
+        }
+        val frames = mutableListOf<IconFrameData>()
         var index = 0
-        while (true) {
+        while (index <= 72) {
             val path = "emojis/$folder/f${index.toString().padStart(2, '0')}.rgb565"
             val bytes = readAsset(path) ?: break
-            frames += decodeRgb565(bytes, size)
+            val alpha = readAsset("emojis/$folder/f${index.toString().padStart(2, '0')}.alpha")
+            frames += decodeFrame(bytes, alpha, size)
             index++
-            if (index > 72) break
         }
-        return frames.ifEmpty { null }
+        if (frames.isEmpty()) return null
+        frameCache[cacheKey] = frames
+        return frames
     }
 
-    private fun emojiFolderName(id: String): String? = when (id.lowercase()) {
-        "1f48c" -> "1f48c"
-        "1f389" -> "1f389_w_w_mqzx3u1111"
-        "1f329", "1f329_fe0f" -> "1f329_fe0f"
-        else -> id
+    actual suspend fun loadThumbnail(ref: String, size: Int): IconFrameData? {
+        val folder = resolveEmojiFolder(ref) ?: return null
+        val static = readAsset("emojis/$folder/s.rgb565")
+        if (static != null) {
+            return decodeFrame(static, readAsset("emojis/$folder/s.alpha"), size)
+        }
+        val bytes = readAsset("emojis/$folder/f00.rgb565") ?: return null
+        return decodeFrame(bytes, readAsset("emojis/$folder/f00.alpha"), size)
+    }
+
+    private fun resolveEmojiFolder(ref: String): String? {
+        val normalized = ref.removePrefix("emoji:").lowercase().replace("-", "_")
+        val preferred = BUNDLED_EMOJIS.firstOrNull { it.ref == ref }?.folder
+            ?: BUNDLED_EMOJIS.firstOrNull {
+                it.ref.removePrefix("emoji:").replace("-", "_") == normalized
+            }?.folder
+            ?: emojiRefToFolder(ref)
+        val candidates = listOf(preferred) + BUNDLED_EMOJIS.map { it.folder }
+        return candidates.distinct().firstOrNull { folder ->
+            readAsset("emojis/$folder/f00.rgb565") != null ||
+                readAsset("emojis/$folder/s.rgb565") != null
+        }
     }
 
     private fun readAsset(path: String): ByteArray? {
@@ -34,9 +63,8 @@ actual object EmojiFrameLoader {
         }
     }
 
-    private fun decodeRgb565(bytes: ByteArray, targetSize: Int): ShortArray {
-        val srcSide = kotlin.math.sqrt(bytes.size / 2.0).toInt()
-        if (srcSide <= 0) return ShortArray(targetSize * targetSize)
+    private fun decodeFrame(bytes: ByteArray, alphaBytes: ByteArray?, targetSize: Int): IconFrameData {
+        val srcSide = sqrt(bytes.size / 2.0).toInt().coerceAtLeast(1)
         val src = ShortArray(srcSide * srcSide)
         var i = 0
         var j = 0
@@ -47,15 +75,25 @@ actual object EmojiFrameLoader {
             i += 2
             j++
         }
-        if (srcSide == targetSize) return src
+        val alpha = if (alphaBytes != null && alphaBytes.size >= srcSide * srcSide) {
+            alphaBytes.copyOf(srcSide * srcSide)
+        } else {
+            null
+        }
+        if (srcSide == targetSize) {
+            return IconFrameData(src, srcSide, alpha)
+        }
         val out = ShortArray(targetSize * targetSize)
+        val outAlpha = alpha?.let { ByteArray(targetSize * targetSize) }
         for (y in 0 until targetSize) {
             for (x in 0 until targetSize) {
                 val sx = x * srcSide / targetSize
                 val sy = y * srcSide / targetSize
-                out[y * targetSize + x] = src[sy * srcSide + sx]
+                val si = sy * srcSide + sx
+                out[y * targetSize + x] = src[si]
+                outAlpha?.set(y * targetSize + x, alpha[si])
             }
         }
-        return out
+        return IconFrameData(out, targetSize, outAlpha)
     }
 }

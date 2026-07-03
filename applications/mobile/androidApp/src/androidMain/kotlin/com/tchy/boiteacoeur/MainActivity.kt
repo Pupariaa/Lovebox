@@ -10,9 +10,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val inviteToken = intent?.data?.lastPathSegment
         setContent {
-            AppRoot(initialInviteToken = inviteToken)
+            AppRoot()
         }
     }
 }

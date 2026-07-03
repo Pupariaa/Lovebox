@@ -24,16 +24,16 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.ime
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Email
 import androidx.compose.material.icons.filled.Lock
@@ -46,6 +46,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.SegmentedButton
@@ -62,6 +63,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
@@ -73,13 +75,21 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.tchy.boiteacoeur.resources.Res
+import com.tchy.boiteacoeur.AppConfig
+import com.tchy.boiteacoeur.platform.openUrl
 import com.tchy.boiteacoeur.resources.logo_lovebox
-import com.tchy.boiteacoeur.ui.theme.AuthGlow
+import com.tchy.boiteacoeur.resources.Res
 import com.tchy.boiteacoeur.ui.theme.PlumBackground
+import com.tchy.boiteacoeur.ui.theme.AuthGlow
 import com.tchy.boiteacoeur.ui.theme.RosePrimary
 import com.tchy.boiteacoeur.ui.viewmodel.AppViewModel
 import org.jetbrains.compose.resources.painterResource
+
+private val OAUTH_PROVIDERS = listOf(
+    "google" to "Continuer avec Google",
+    "apple" to "Continuer avec Apple",
+    "facebook" to "Continuer avec Facebook",
+)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -99,6 +109,9 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
         contentVisible = true
     }
 
+    val density = LocalDensity.current
+    val keyboardVisible = WindowInsets.ime.getBottom(density) > 0
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -112,72 +125,76 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
                 ),
             ),
     ) {
-        AuthBackgroundGlow()
+        if (!keyboardVisible) {
+            AuthBackgroundGlow()
+        }
 
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
                 .imePadding()
-                .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp)
-                .padding(top = 48.dp, bottom = 32.dp),
+                .padding(top = if (keyboardVisible) 12.dp else 24.dp, bottom = 16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            AnimatedVisibility(
-                visible = contentVisible,
-                enter = fadeIn(tween(700)) + slideInVertically(
-                    initialOffsetY = { -it / 3 },
-                    animationSpec = tween(700, easing = FastOutSlowInEasing),
-                ),
-            ) {
-                AuthHeader()
-            }
-
-            Spacer(Modifier.height(36.dp))
-
-            AnimatedVisibility(
-                visible = contentVisible,
-                enter = fadeIn(tween(700, delayMillis = 150)),
-            ) {
-                SingleChoiceSegmentedButtonRow(
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    SegmentedButton(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                        label = { Text("Connexion") },
-                    )
-                    SegmentedButton(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                        label = { Text("Inscription") },
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(8.dp))
-
-            AnimatedVisibility(
-                visible = contentVisible,
-                enter = fadeIn(tween(700, delayMillis = 200)),
-            ) {
+            if (keyboardVisible) {
                 Text(
-                    text = if (registerMode) {
-                        "Rejoins la boîte à cœur de quelqu'un que tu aimes."
-                    } else {
-                        "Content de te revoir."
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
+                    text = "Boite a Coeur",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.fillMaxWidth(),
                 )
+                Spacer(Modifier.height(12.dp))
+            } else {
+                AnimatedVisibility(
+                    visible = contentVisible,
+                    enter = fadeIn(tween(700)) + slideInVertically(
+                        initialOffsetY = { -it / 3 },
+                        animationSpec = tween(700, easing = FastOutSlowInEasing),
+                    ),
+                ) {
+                    AuthHeader()
+                }
+                Spacer(Modifier.height(20.dp))
+                AnimatedVisibility(
+                    visible = contentVisible,
+                    enter = fadeIn(tween(700, delayMillis = 150)),
+                ) {
+                    SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                        SegmentedButton(
+                            selected = selectedTab == 0,
+                            onClick = { selectedTab = 0 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                            label = { Text("Connexion") },
+                        )
+                        SegmentedButton(
+                            selected = selectedTab == 1,
+                            onClick = { selectedTab = 1 },
+                            shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                            label = { Text("Inscription") },
+                        )
+                    }
+                }
+                Spacer(Modifier.height(12.dp))
+                AnimatedVisibility(
+                    visible = contentVisible,
+                    enter = fadeIn(tween(700, delayMillis = 200)),
+                ) {
+                    Text(
+                        text = if (registerMode) {
+                            "Rejoins la boite a coeur de quelqu'un que tu aimes."
+                        } else {
+                            "Content de te revoir."
+                        },
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                Spacer(Modifier.height(16.dp))
             }
-
-            Spacer(Modifier.height(24.dp))
 
             AnimatedContent(
                 targetState = registerMode,
@@ -210,6 +227,31 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
                     passwordValid = passwordValid,
                 )
             }
+
+            if (!keyboardVisible) {
+                Spacer(Modifier.weight(1f))
+                AnimatedVisibility(
+                    visible = contentVisible,
+                    enter = fadeIn(tween(700, delayMillis = 250)),
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        OAUTH_PROVIDERS.forEach { (provider, label) ->
+                            OutlinedButton(
+                                onClick = {
+                                    openUrl("${AppConfig.API_BASE}/api/v1/auth/oauth/$provider/start")
+                                },
+                                modifier = Modifier.fillMaxWidth().height(44.dp),
+                                shape = MaterialTheme.shapes.medium,
+                            ) {
+                                Text(label, style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -236,13 +278,11 @@ private fun AuthHeader() {
         label = "glowAlpha",
     )
 
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Box(contentAlignment = Alignment.Center) {
             Box(
                 modifier = Modifier
-                    .size(160.dp)
+                    .size(120.dp)
                     .alpha(glowAlpha)
                     .clip(CircleShape)
                     .background(
@@ -253,24 +293,20 @@ private fun AuthHeader() {
             )
             Image(
                 painter = painterResource(Res.drawable.logo_lovebox),
-                contentDescription = "Boîte à Cœur",
+                contentDescription = "Boite a Coeur",
                 modifier = Modifier
-                    .size(120.dp)
+                    .size(88.dp)
                     .offset(y = ((floatOffset - 0.5f) * 12).dp)
                     .scale(1f + (floatOffset - 0.5f) * 0.04f),
             )
         }
-
-        Spacer(Modifier.height(16.dp))
-
+        Spacer(Modifier.height(8.dp))
         Text(
-            text = "Boîte à Cœur",
-            style = MaterialTheme.typography.headlineLarge,
+            text = "Boite a Coeur",
+            style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
-
         Spacer(Modifier.height(6.dp))
-
         Text(
             text = "Envoie des messages qui comptent",
             style = MaterialTheme.typography.bodyMedium,
@@ -343,11 +379,11 @@ private fun AuthFormCard(
         tonalElevation = 2.dp,
     ) {
         Column(
-            modifier = Modifier.padding(20.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text(
-                text = if (registerMode) "Créer un compte" else "Se connecter",
+                text = if (registerMode) "Creer un compte" else "Se connecter",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
             )
@@ -356,9 +392,7 @@ private fun AuthFormCard(
                 value = email,
                 onValueChange = onEmailChange,
                 label = { Text("Adresse e-mail") },
-                leadingIcon = {
-                    Icon(Icons.Default.Email, contentDescription = null)
-                },
+                leadingIcon = { Icon(Icons.Default.Email, contentDescription = null) },
                 modifier = Modifier.fillMaxWidth(),
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Email,
@@ -379,9 +413,7 @@ private fun AuthFormCard(
                 value = password,
                 onValueChange = onPasswordChange,
                 label = { Text("Mot de passe") },
-                leadingIcon = {
-                    Icon(Icons.Default.Lock, contentDescription = null)
-                },
+                leadingIcon = { Icon(Icons.Default.Lock, contentDescription = null) },
                 trailingIcon = {
                     IconButton(onClick = onPasswordVisibilityToggle) {
                         Icon(
@@ -409,7 +441,7 @@ private fun AuthFormCard(
                 isError = password.isNotBlank() && !passwordValid,
                 supportingText = {
                     if (password.isNotBlank() && !passwordValid) {
-                        Text("Minimum 8 caractères")
+                        Text("Minimum 8 caracteres")
                     }
                 },
             )
@@ -434,7 +466,7 @@ private fun AuthFormCard(
                     )
                 } else {
                     Text(
-                        text = if (registerMode) "Créer mon compte" else "Continuer",
+                        text = if (registerMode) "Creer mon compte" else "Continuer",
                         style = MaterialTheme.typography.labelLarge,
                     )
                 }

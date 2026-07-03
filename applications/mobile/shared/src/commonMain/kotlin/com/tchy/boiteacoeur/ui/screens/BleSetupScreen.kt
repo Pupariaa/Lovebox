@@ -15,10 +15,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bluetooth
@@ -81,7 +77,7 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
     val requestPermissions = rememberBluetoothPermissionRequester { granted ->
         permissionsGranted = granted
         if (!granted) {
-            vm.snackbarMessage = "Autorise le Bluetooth pour scanner"
+            vm.showSnackbar("Autorise le Bluetooth pour scanner")
         }
     }
 
@@ -233,28 +229,26 @@ private fun ScanStep(
             Text(if (vm.loading) "Recherche..." else "Rechercher ma boîte")
         }
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(8.dp),
+        Column(
             modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             if (vm.bleDevices.isEmpty() && !vm.loading) {
-                item {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = MaterialTheme.shapes.medium,
-                        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
-                    ) {
-                        Text(
-                            text = "Aucune boîte trouvée. Vérifie qu'elle est en mode configuration (écran WiFi / premier démarrage) et proche de ton téléphone.",
-                            modifier = Modifier.padding(16.dp),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = MaterialTheme.shapes.medium,
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+                ) {
+                    Text(
+                        text = "Aucune boîte trouvée. Vérifie le mode configuration et la proximité.",
+                        modifier = Modifier.padding(12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                    )
                 }
             }
-            items(vm.bleDevices) { device ->
+            vm.bleDevices.take(4).forEach { device ->
                 val selected = selectedDevice?.address == device.address
                 Card(
                     modifier = Modifier
@@ -270,10 +264,10 @@ private fun ScanStep(
                     ),
                     border = if (selected) BorderStroke(1.5.dp, RosePrimary) else null,
                 ) {
-                    Column(Modifier.padding(14.dp)) {
+                    Column(Modifier.padding(12.dp)) {
                         Text(
                             device.name,
-                            style = MaterialTheme.typography.titleMedium,
+                            style = MaterialTheme.typography.titleSmall,
                             fontWeight = FontWeight.Medium,
                         )
                         Text(
@@ -283,6 +277,13 @@ private fun ScanStep(
                         )
                     }
                 }
+            }
+            if (vm.bleDevices.size > 4) {
+                Text(
+                    text = "${vm.bleDevices.size - 4} autre(s) boîte(s) détectée(s)",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
 
@@ -314,18 +315,16 @@ private fun CredentialsStep(
         focusedLabelColor = RosePrimary,
         cursorColor = RosePrimary,
     )
-    val scrollState = rememberScrollState()
-
     Column(
         modifier = Modifier
             .fillMaxSize()
             .imePadding()
             .navigationBarsPadding()
-            .verticalScroll(scrollState)
             .padding(horizontal = 24.dp)
             .padding(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
+        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Surface(
             modifier = Modifier.fillMaxWidth(),
             shape = MaterialTheme.shapes.medium,
@@ -373,8 +372,7 @@ private fun CredentialsStep(
             shape = MaterialTheme.shapes.medium,
             colors = fieldColors,
         )
-
-        Spacer(Modifier.height(8.dp))
+        }
 
         Button(
             onClick = onSubmit,

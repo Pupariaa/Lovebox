@@ -19,6 +19,22 @@ data class UserDto(
 )
 
 @Serializable
+data class UserProfileDto(
+    val id: Long,
+    val email: String,
+    @SerialName("first_name") val firstName: String? = null,
+    @SerialName("last_name") val lastName: String? = null,
+    val locale: String = "fr",
+    @SerialName("email_verified") val emailVerified: Boolean = false,
+)
+
+@Serializable
+data class UserProfileResponse(
+    val ok: Boolean = true,
+    val user: UserProfileDto,
+)
+
+@Serializable
 data class ApiError(
     val ok: Boolean = false,
     val error: String,
@@ -29,15 +45,25 @@ data class DeviceDto(
     val id: Long,
     val uuid: String,
     @SerialName("device_name") val deviceName: String,
+    @SerialName("display_name") val displayName: String = "",
     @SerialName("serial_number") val serialNumber: String = "",
     val region: String? = null,
+    @SerialName("region_override") val regionOverride: String? = null,
     @SerialName("firmware_version") val firmwareVersion: String? = null,
     @SerialName("last_seen_at") val lastSeenAt: String? = null,
+    @SerialName("last_seen_seconds_ago") val lastSeenSecondsAgo: Int? = null,
     val online: Boolean = false,
 )
 
 @Serializable
 data class DeviceMeResponse(
+    val ok: Boolean = true,
+    val devices: List<DeviceDto> = emptyList(),
+    val device: DeviceDto? = null,
+)
+
+@Serializable
+data class DeviceUpdateResponse(
     val ok: Boolean = true,
     val device: DeviceDto? = null,
 )
@@ -45,7 +71,9 @@ data class DeviceMeResponse(
 @Serializable
 data class PairingStateResponse(
     val ok: Boolean = true,
+    @SerialName("owned_devices") val ownedDevices: List<OwnedDeviceDto> = emptyList(),
     @SerialName("owned_device") val ownedDevice: OwnedDeviceDto? = null,
+    @SerialName("linked_targets") val linkedTargets: List<LinkedTargetDto> = emptyList(),
     @SerialName("linked_target") val linkedTarget: LinkedTargetDto? = null,
     @SerialName("pending_requests") val pendingRequests: List<PendingRequestDto> = emptyList(),
 )
@@ -54,7 +82,10 @@ data class PairingStateResponse(
 data class OwnedDeviceDto(
     val id: Long,
     @SerialName("device_name") val deviceName: String,
+    @SerialName("display_name") val displayName: String = "",
     val uuid: String,
+    @SerialName("serial_number") val serialNumber: String = "",
+    @SerialName("last_seen_at") val lastSeenAt: String? = null,
 )
 
 @Serializable
@@ -62,7 +93,13 @@ data class LinkedTargetDto(
     @SerialName("pairing_id") val pairingId: Long,
     @SerialName("device_id") val deviceId: Long,
     @SerialName("device_name") val deviceName: String,
+    @SerialName("display_name") val displayName: String = "",
     val uuid: String,
+    @SerialName("serial_number") val serialNumber: String = "",
+    @SerialName("relationship_type") val relationshipType: String = "contact",
+    @SerialName("last_seen_at") val lastSeenAt: String? = null,
+    @SerialName("last_seen_seconds_ago") val lastSeenSecondsAgo: Int? = null,
+    val online: Boolean = false,
 )
 
 @Serializable
@@ -71,6 +108,14 @@ data class PendingRequestDto(
     @SerialName("pairing_id") val pairingId: Long,
     @SerialName("from_email") val fromEmail: String,
     @SerialName("created_at") val createdAt: String,
+)
+
+@Serializable
+data class PairingCodeResponse(
+    val ok: Boolean = true,
+    val code: String,
+    @SerialName("expires_at") val expiresAt: String? = null,
+    @SerialName("device_id") val deviceId: Long? = null,
 )
 
 @Serializable

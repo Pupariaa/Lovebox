@@ -12,28 +12,31 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-val RosePrimary = Color(0xFFFF7385)
+val RosePrimary = Color(0xFFFF6B8A)
 val RoseSecondary = Color(0xFFE85D75)
-val RoseDark = Color(0xFFC45C5C)
-val PlumBackground = Color(0xFF120310)
-val SurfaceDark = Color(0xFF1A0A14)
-val SurfaceCard = Color(0xFF241018)
-val TextPrimary = Color(0xFFF5E6E8)
-val TextMuted = Color(0xFFB8A0A8)
-val AuthGlow = Color(0x40FF7385)
+val RoseDark = Color(0xFFB84D62)
+val WineAccent = Color(0xFF8B3A4A)
+val CreamHighlight = Color(0xFFFFF5F0)
+val CreamMuted = Color(0xFFF5E6DC)
+val PlumBackground = Color(0xFF1A0C12)
+val SurfaceDark = Color(0xFF241018)
+val SurfaceCard = Color(0xFF2E141C)
+val TextPrimary = Color(0xFFFFF0F2)
+val TextMuted = Color(0xFFC9A8B0)
+val AuthGlow = Color(0x50FF6B8A)
 
 private val DarkColors = darkColorScheme(
     primary = RosePrimary,
-    onPrimary = Color.White,
+    onPrimary = Color(0xFF2A0A12),
     secondary = RoseSecondary,
-    tertiary = RoseDark,
+    tertiary = WineAccent,
     background = PlumBackground,
     surface = SurfaceDark,
     surfaceVariant = SurfaceCard,
     onBackground = TextPrimary,
     onSurface = TextPrimary,
     onSurfaceVariant = TextMuted,
-    outline = Color(0xFF4A3040),
+    outline = Color(0xFF5A3848),
 )
 
 private val AppTypography = Typography(
