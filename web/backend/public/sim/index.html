@@ -64,15 +64,15 @@
       </section>
 
       <section class="block">
-        <h2>Partenaire</h2>
-        <button type="button" id="inviteBtn" class="btn">Generer un lien d'invitation</button>
-        <p id="inviteUrl" class="mono hidden"></p>
+        <h2>Contacts</h2>
+        <button type="button" id="generateCodeBtn" class="btn">Generer un code de liaison</button>
+        <p id="pairingCode" class="mono hidden"></p>
+        <button type="button" id="copyCodeBtn" class="btn ghost">Copier le code</button>
         <label class="field">
-          <span>Token invitation (partenaire)</span>
-          <input id="inviteToken" type="text" placeholder="coller le token">
+          <span>Code recu</span>
+          <input id="acceptCodeInput" type="text" placeholder="LOVE-XXXX">
         </label>
-        <button type="button" id="acceptInviteBtn" class="btn">Accepter l'invitation</button>
-        <div id="pendingRequests"></div>
+        <button type="button" id="acceptCodeBtn" class="btn">Lier avec ce code</button>
       </section>
 
       <section class="block">

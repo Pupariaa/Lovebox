@@ -98,12 +98,10 @@ const Api = (() => {
     return request("/api/v1/devices/me");
   }
 
-  async function claimDevice(deviceName, serialNumber) {
-    const body = { device_name: deviceName };
-    if (serialNumber) body.serial_number = serialNumber;
+  async function claimDevice(uuid, serialNumber) {
     return request("/api/v1/devices/claim", {
       method: "POST",
-      body: JSON.stringify(body),
+      body: JSON.stringify({ uuid, serial_number: serialNumber }),
     });
   }
 
@@ -111,19 +109,15 @@ const Api = (() => {
     return request("/api/v1/pairings/me");
   }
 
-  async function createInvite() {
-    return request("/api/v1/pairings/invite", { method: "POST", body: "{}" });
+  async function generatePairingCode() {
+    return request("/api/v1/pairings/code/generate", { method: "POST", body: "{}" });
   }
 
-  async function acceptInvite(token) {
-    return request("/api/v1/pairings/accept-invite", {
+  async function acceptPairingCode(code) {
+    return request("/api/v1/pairings/code/accept", {
       method: "POST",
-      body: JSON.stringify({ token }),
+      body: JSON.stringify({ code }),
     });
-  }
-
-  async function acceptRequest(id) {
-    return request(`/api/v1/pairings/${id}/accept`, { method: "POST", body: "{}" });
   }
 
   async function sendMessage(targetDeviceId, bacmBuffer) {
@@ -145,9 +139,8 @@ const Api = (() => {
     getMyDevice,
     claimDevice,
     getPairingState,
-    createInvite,
-    acceptInvite,
-    acceptRequest,
+    generatePairingCode,
+    acceptPairingCode,
     sendMessage,
   };
 })();

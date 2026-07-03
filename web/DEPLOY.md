@@ -31,9 +31,31 @@ Create `httpdocs/boiteacoeur/.env` from [`.env.example`](backend/.env.example):
 **Critical:** the subdomain must not serve the Plesk default page.
 
 1. Plesk → **Websites & Domains** → `boite-a-coeur.techalchemy.fr`
-2. **Hosting Settings** → Document root: `httpdocs/boiteacoeur/public` (recommended)
-   - Alternative: `httpdocs/boiteacoeur` if you use the root `index.php` bootstrap (included in repo)
+2. **Hosting Settings** → Document root: `httpdocs/boiteacoeur` (repo bootstrap via root `index.php`)
+   - Alternative: `httpdocs/boiteacoeur/public` → then sim is `/sim/` (no `/public/` prefix)
 3. PHP **8.1+** FPM enabled for this vhost
+
+With document root **`httpdocs/boiteacoeur`** (not `public/`):
+
+| URL | Files on disk |
+|-----|----------------|
+| `/public/sim/` | `public/sim/` |
+| `/public/updates/` | `public/updates/` (admin OTA UI) |
+| `/updates/1.0.1/firmware.bin` | `updates/1.0.1/firmware.bin` (device download) |
+| `/api/v1/...` | Slim API via `index.php` |
+
+OTA env (filesystem path, not URL):
+
+```env
+OTA_STORAGE_PATH=
+OTA_PUBLIC_URL=https://boite-a-coeur.techalchemy.fr
+OTA_ADMIN_KEY=<random-secret>
+```
+
+Empty `OTA_STORAGE_PATH` → defaults to `updates/` next to `index.php`.
+
+Admin OTA UI (`/public/updates/`) and API routes `/api/v1/updates/*` require header `X-Ota-Admin-Key` matching `OTA_ADMIN_KEY`. The browser UI stores the key in `localStorage` after first prompt.
+
 4. After upload, verify:
 
 ```bash

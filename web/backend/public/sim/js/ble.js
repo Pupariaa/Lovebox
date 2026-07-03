@@ -54,8 +54,9 @@ const Ble = (() => {
       const parts = raw.split("|");
       const deviceName = (parts[0] || "").trim();
       const serialNumber = (parts[1] || "").trim() || null;
+      const uuid = (parts[2] || "").trim() || null;
       if (deviceName && deviceName.toLowerCase() !== "boiteacoeur") {
-        return { deviceName, serialNumber };
+        return { deviceName, serialNumber, uuid };
       }
     } catch (e) {
       console.log("info char read failed", e);

@@ -30,8 +30,25 @@ final class DeviceRepository
 
     public function findByOwner(int $userId): ?array
     {
-        $stmt = $this->pdo->prepare('SELECT * FROM devices WHERE owner_user_id = :uid LIMIT 1');
+        $rows = $this->listByOwner($userId);
+        return $rows[0] ?? null;
+    }
+
+    public function listByOwner(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM devices WHERE owner_user_id = :uid ORDER BY id ASC'
+        );
         $stmt->execute(['uid' => $userId]);
+        return $stmt->fetchAll();
+    }
+
+    public function findOwnedByUser(int $userId, int $deviceId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM devices WHERE id = :id AND owner_user_id = :uid LIMIT 1'
+        );
+        $stmt->execute(['id' => $deviceId, 'uid' => $userId]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
@@ -66,14 +83,16 @@ final class DeviceRepository
 
     public function create(array $data): int
     {
+        $displayName = $data['display_name'] ?? $data['device_name'] ?? 'BoiteACoeur';
         $stmt = $this->pdo->prepare(
-            'INSERT INTO devices (uuid, serial_number, device_name, secret_hash, region, firmware_version, last_seen_at)
-             VALUES (:uuid, :serial, :name, :secret, :region, :fw, NOW())'
+            'INSERT INTO devices (uuid, serial_number, device_name, display_name, secret_hash, region, firmware_version, last_seen_at)
+             VALUES (:uuid, :serial, :name, :display, :secret, :region, :fw, NOW())'
         );
         $stmt->execute([
             'uuid' => $data['uuid'],
             'serial' => $data['serial_number'] ?? '',
             'name' => $data['device_name'] ?? 'BoiteACoeur',
+            'display' => $displayName,
             'secret' => $data['secret_hash'] ?? null,
             'region' => $data['region'] ?? null,
             'fw' => $data['firmware_version'] ?? null,
@@ -106,6 +125,15 @@ final class DeviceRepository
         return $stmt->rowCount() > 0;
     }
 
+    public function unclaim(int $deviceId, int $userId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE devices SET owner_user_id = NULL WHERE id = :id AND owner_user_id = :uid'
+        );
+        $stmt->execute(['uid' => $userId, 'id' => $deviceId]);
+        return $stmt->rowCount() > 0;
+    }
+
     public function touchHeartbeat(int $id, ?string $firmwareVersion = null): void
     {
         if ($firmwareVersion !== null) {
@@ -117,5 +145,24 @@ final class DeviceRepository
         }
         $stmt = $this->pdo->prepare('UPDATE devices SET last_seen_at = NOW() WHERE id = :id');
         $stmt->execute(['id' => $id]);
+    }
+
+    public function listAllWithSecret(): array
+    {
+        $stmt = $this->pdo->query(
+            'SELECT id, uuid, serial_number, firmware_version, last_seen_at, owner_user_id
+             FROM devices
+             WHERE secret_hash IS NOT NULL
+             ORDER BY id ASC'
+        );
+        return $stmt->fetchAll();
+    }
+
+    public function isClaimed(int $deviceId): bool
+    {
+        $stmt = $this->pdo->prepare('SELECT owner_user_id FROM devices WHERE id = :id LIMIT 1');
+        $stmt->execute(['id' => $deviceId]);
+        $owner = $stmt->fetchColumn();
+        return $owner !== false && $owner !== null;
     }
 }

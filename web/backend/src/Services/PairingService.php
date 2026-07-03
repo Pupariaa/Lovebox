@@ -6,195 +6,181 @@ namespace Bac\Services;
 
 use Bac\Repositories\DeviceRepository;
 use Bac\Repositories\PairingRepository;
-use Bac\Support\TokenUtil;
+use PDO;
 
 final class PairingService
 {
-    private string $appUrl;
-    private int $inviteTtl;
+    private const CODE_TTL_SEC = 900;
+    private const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
     public function __construct(
         private PairingRepository $pairings,
-        private DeviceRepository $devices
+        private DeviceRepository $devices,
+        private PDO $pdo
     ) {
-        $settings = require dirname(__DIR__, 2) . '/config/settings.php';
-        $this->appUrl = rtrim($settings['app']['url'], '/');
-        $this->inviteTtl = $settings['invite_token_ttl'];
     }
 
-    public function createInvite(int $userId): array
+    public function generateCode(int $userId, ?int $deviceId = null): array
     {
-        $owned = $this->devices->findByOwner($userId);
+        $owned = $deviceId
+            ? $this->devices->findOwnedByUser($userId, $deviceId)
+            : $this->devices->findByOwner($userId);
         if (!$owned) {
             throw new \InvalidArgumentException('claim your device first');
         }
-        $token = TokenUtil::randomUrlSafe(24);
-        $expiresAt = date('Y-m-d H:i:s', time() + $this->inviteTtl);
-        $this->pairings->createInvite($token, (int) $owned['id'], $userId, $expiresAt);
+        $this->pairings->invalidateCodesForUser($userId);
+        $code = $this->randomCode();
+        $expiresAt = date('Y-m-d H:i:s', time() + self::CODE_TTL_SEC);
+        $this->pairings->createPairingCode($code, $userId, (int) $owned['id'], $expiresAt);
         return [
-            'token' => $token,
-            'url' => $this->appUrl . '/invite/' . $token,
-            'deep_link' => 'boiteacoeur://invite/' . $token,
+            'code' => $code,
             'expires_at' => $expiresAt,
+            'device_id' => (int) $owned['id'],
         ];
     }
 
-    public function acceptInvite(int $userId, string $token): array
+    public function acceptCode(int $userId, string $rawCode, ?int $fromDeviceId = null): array
     {
-        if ($this->pairings->findActiveBySender($userId)) {
-            throw new \InvalidArgumentException('already linked to a device');
+        $code = $this->normalizeCode($rawCode);
+        if ($code === '') {
+            throw new \InvalidArgumentException('invalid code');
         }
-        $invite = $this->pairings->findInvite($token);
-        if (!$invite) {
-            throw new \InvalidArgumentException('invalid or expired invite');
+        $entry = $this->pairings->findValidCode($code);
+        if (!$entry) {
+            throw new \InvalidArgumentException('invalid or expired code');
         }
-        $targetDeviceId = (int) $invite['device_id'];
-        $owned = $this->devices->findByOwner($userId);
-        if ($owned && (int) $owned['id'] === $targetDeviceId) {
+        $ownerId = (int) $entry['owner_user_id'];
+        if ($ownerId === $userId) {
+            throw new \InvalidArgumentException('cannot link to yourself');
+        }
+        $targetDevice = $this->devices->findById((int) $entry['device_id']);
+        if (!$targetDevice) {
+            throw new \InvalidArgumentException('device not found');
+        }
+        $accepterDevice = $fromDeviceId
+            ? $this->devices->findOwnedByUser($userId, $fromDeviceId)
+            : $this->devices->findByOwner($userId);
+        if (!$accepterDevice) {
+            throw new \InvalidArgumentException('claim your device first');
+        }
+        if ((int) $accepterDevice['id'] === (int) $targetDevice['id']) {
             throw new \InvalidArgumentException('cannot link to your own device');
         }
-        $this->pairings->consumeInvite($token);
-        $pairingId = $this->pairings->createPairing($userId, $targetDeviceId, 'active');
-        $this->ensureReciprocalPairing(
-            (int) $invite['created_by_user_id'],
-            $userId
-        );
-        return $this->formatPairing($pairingId, $userId);
+
+        $this->pdo->beginTransaction();
+        try {
+            $this->pairings->consumeCode($code);
+            $this->pairings->createReciprocalPairing($userId, (int) $targetDevice['id']);
+            $this->pairings->createReciprocalPairing($ownerId, (int) $accepterDevice['id']);
+            $this->pdo->commit();
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
+
+        return $this->getState($userId);
     }
 
-    public function requestPairing(int $userId, ?string $deviceName, ?string $uuid): array
+    public function unlink(int $userId, int $pairingId): void
     {
-        if ($this->pairings->findActiveBySender($userId)) {
-            throw new \InvalidArgumentException('already linked to a device');
-        }
-        $target = null;
-        if ($uuid) {
-            $target = $this->devices->findByUuid(trim($uuid));
-        } elseif ($deviceName) {
-            $target = $this->devices->findByDeviceName(trim($deviceName));
-        }
-        if (!$target) {
-            throw new \InvalidArgumentException('target device not found');
-        }
-        $owned = $this->devices->findByOwner($userId);
-        if ($owned && (int) $owned['id'] === (int) $target['id']) {
-            throw new \InvalidArgumentException('cannot link to your own device');
-        }
-        $requestId = $this->pairings->createRequest($userId, (int) $target['id']);
-        $pairingId = $this->pairings->createPairing($userId, (int) $target['id'], 'pending');
-        return [
-            'request_id' => $requestId,
-            'pairing_id' => $pairingId,
-            'status' => 'pending',
-            'target_device_name' => $target['device_name'],
-        ];
-    }
-
-    public function acceptPairing(int $userId, int $pairingId): array
-    {
-        $owned = $this->devices->findByOwner($userId);
-        if (!$owned) {
-            throw new \InvalidArgumentException('no owned device');
-        }
-        $pairing = $this->pairings->findPendingById($pairingId);
-        if (!$pairing || (int) $pairing['target_device_id'] !== (int) $owned['id']) {
+        if (!$this->pairings->unlink($pairingId, $userId)) {
             throw new \InvalidArgumentException('pairing not found');
         }
-        if (!$this->pairings->updateStatus($pairingId, 'active')) {
-            throw new \InvalidArgumentException('accept failed');
-        }
-        $this->ensureReciprocalPairing(
-            $userId,
-            (int) $pairing['sender_user_id']
-        );
-        return $this->formatPairing($pairingId, (int) $pairing['sender_user_id']);
-    }
-
-    public function rejectPairing(int $userId, int $pairingId): void
-    {
-        $owned = $this->devices->findByOwner($userId);
-        if (!$owned) {
-            throw new \InvalidArgumentException('no owned device');
-        }
-        $pairing = $this->pairings->findPendingById($pairingId);
-        if (!$pairing || (int) $pairing['target_device_id'] !== (int) $owned['id']) {
-            throw new \InvalidArgumentException('pairing not found');
-        }
-        $this->pairings->updateStatus($pairingId, 'rejected');
     }
 
     public function getState(int $userId): array
     {
-        $owned = $this->devices->findByOwner($userId);
+        $ownedList = $this->devices->listByOwner($userId);
+        $owned = $ownedList[0] ?? null;
         if ($owned) {
-            $this->repairReciprocalPairing($userId, (int) $owned['id']);
+            $this->repairReciprocalPairings($userId, (int) $owned['id']);
         }
-        $active = $this->pairings->findActiveBySender($userId);
-        $pendingIncoming = [];
-        if ($owned) {
-            $pendingIncoming = $this->pairings->listPendingRequestsForDevice((int) $owned['id']);
-        }
+        $active = $this->pairings->listActiveBySender($userId);
         return [
+            'owned_devices' => array_map(static fn ($d) => [
+                'id' => (int) $d['id'],
+                'device_name' => $d['device_name'],
+                'display_name' => trim((string) ($d['display_name'] ?? '')) ?: $d['device_name'],
+                'uuid' => $d['uuid'],
+                'serial_number' => $d['serial_number'],
+                'last_seen_at' => $d['last_seen_at'],
+            ], $ownedList),
             'owned_device' => $owned ? [
                 'id' => (int) $owned['id'],
                 'device_name' => $owned['device_name'],
+                'display_name' => trim((string) ($owned['display_name'] ?? '')) ?: $owned['device_name'],
                 'uuid' => $owned['uuid'],
             ] : null,
-            'linked_target' => $active ? [
-                'pairing_id' => (int) $active['id'],
-                'device_id' => (int) $active['target_device_id'],
-                'device_name' => $active['device_name'],
-                'uuid' => $active['target_uuid'],
-            ] : null,
-            'pending_requests' => array_map(static fn ($r) => [
-                'request_id' => (int) $r['id'],
-                'pairing_id' => (int) $r['pairing_id'],
-                'from_email' => $r['from_email'],
-                'created_at' => $r['created_at'],
-            ], $pendingIncoming),
+            'linked_targets' => array_map(fn ($row) => $this->formatTarget($row), $active),
+            'linked_target' => isset($active[0]) ? $this->formatTarget($active[0]) : null,
+            'pending_requests' => [],
         ];
     }
 
-    private function ensureReciprocalPairing(int $ownerUserId, int $partnerUserId): void
+    public function hasActivePairingTo(int $userId, int $targetDeviceId): bool
     {
-        if ($ownerUserId === $partnerUserId) {
-            return;
-        }
-        $partnerDevice = $this->devices->findByOwner($partnerUserId);
-        if (!$partnerDevice) {
-            return;
-        }
-        $this->pairings->createReciprocalPairing($ownerUserId, (int) $partnerDevice['id']);
+        return $this->pairings->findActiveBySenderAndTarget($userId, $targetDeviceId) !== null;
     }
 
-    private function repairReciprocalPairing(int $userId, int $ownedDeviceId): void
+    private function repairReciprocalPairings(int $userId, int $ownedDeviceId): void
     {
-        if ($this->pairings->findActiveBySender($userId)) {
-            return;
-        }
         $incoming = $this->pairings->findActiveByTargetDevice($ownedDeviceId);
-        if (!$incoming) {
-            return;
+        foreach ($incoming as $row) {
+            $partnerDevice = $this->devices->findByOwner((int) $row['sender_user_id']);
+            if (!$partnerDevice) {
+                continue;
+            }
+            $this->pairings->createReciprocalPairing($userId, (int) $partnerDevice['id']);
         }
-        $partnerDevice = $this->devices->findByOwner((int) $incoming['sender_user_id']);
-        if (!$partnerDevice) {
-            return;
-        }
-        $this->pairings->createReciprocalPairing($userId, (int) $partnerDevice['id']);
     }
 
-    private function formatPairing(int $pairingId, int $senderUserId): array
+    private function formatTarget(array $row): array
     {
-        $active = $this->pairings->findActiveBySender($senderUserId);
-        if (!$active || (int) $active['id'] !== $pairingId) {
-            $device = $this->devices->findById((int) ($active['target_device_id'] ?? 0));
-            return ['pairing_id' => $pairingId, 'status' => 'active'];
+        $display = trim((string) ($row['display_name'] ?? ''));
+        if ($display === '') {
+            $display = $row['device_name'];
+        }
+        $lastSeen = $row['last_seen_at'] ?? null;
+        $online = false;
+        $ago = null;
+        if ($lastSeen) {
+            $ago = time() - strtotime($lastSeen);
+            $online = $ago < 120;
         }
         return [
-            'pairing_id' => $pairingId,
-            'status' => 'active',
-            'target_device_name' => $active['device_name'],
-            'target_uuid' => $active['target_uuid'],
+            'pairing_id' => (int) $row['id'],
+            'device_id' => (int) $row['target_device_id'],
+            'device_name' => $row['device_name'],
+            'display_name' => $display,
+            'uuid' => $row['target_uuid'],
+            'serial_number' => $row['serial_number'] ?? '',
+            'relationship_type' => $row['relationship_type'] ?? 'contact',
+            'last_seen_at' => $lastSeen,
+            'last_seen_seconds_ago' => $ago,
+            'online' => $online,
         ];
+    }
+
+    private function randomCode(): string
+    {
+        $len = strlen(self::CODE_ALPHABET);
+        $out = 'LOVE-';
+        for ($i = 0; $i < 4; $i++) {
+            $out .= self::CODE_ALPHABET[random_int(0, $len - 1)];
+        }
+        return $out;
+    }
+
+    private function normalizeCode(string $raw): string
+    {
+        $raw = strtoupper(trim($raw));
+        $raw = str_replace(' ', '', $raw);
+        if (str_starts_with($raw, 'LOVE')) {
+            return $raw;
+        }
+        if (strlen($raw) === 4) {
+            return 'LOVE-' . $raw;
+        }
+        return $raw;
     }
 }

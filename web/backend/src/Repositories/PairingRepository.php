@@ -12,45 +12,50 @@ final class PairingRepository
     {
     }
 
-    public function findActiveBySender(int $userId): ?array
+    public function listActiveBySender(int $userId): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT p.*, d.device_name, d.uuid AS target_uuid
+            "SELECT p.*, d.device_name, d.display_name, d.uuid AS target_uuid, d.serial_number,
+                    d.last_seen_at, d.firmware_version
              FROM pairings p
              JOIN devices d ON d.id = p.target_device_id
              WHERE p.sender_user_id = :uid AND p.status = 'active'
-             LIMIT 1"
+             ORDER BY p.created_at ASC"
         );
         $stmt->execute(['uid' => $userId]);
+        return $stmt->fetchAll();
+    }
+
+    public function findActiveBySenderAndTarget(int $userId, int $targetDeviceId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT p.*, d.device_name, d.display_name, d.uuid AS target_uuid
+             FROM pairings p
+             JOIN devices d ON d.id = p.target_device_id
+             WHERE p.sender_user_id = :uid AND p.target_device_id = :tid AND p.status = 'active'
+             LIMIT 1"
+        );
+        $stmt->execute(['uid' => $userId, 'tid' => $targetDeviceId]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
 
-    public function findActiveByTargetDevice(int $deviceId): ?array
+    public function findActiveByTargetDevice(int $deviceId): array
     {
         $stmt = $this->pdo->prepare(
-            "SELECT p.*, u.email AS sender_email
+            "SELECT p.*, u.email AS sender_email, u.first_name, u.last_name
              FROM pairings p
              JOIN users u ON u.id = p.sender_user_id
              WHERE p.target_device_id = :did AND p.status = 'active'
-             LIMIT 1"
+             ORDER BY p.created_at ASC"
         );
         $stmt->execute(['did' => $deviceId]);
-        $row = $stmt->fetch();
-        return $row ?: null;
+        return $stmt->fetchAll();
     }
 
-    public function createReciprocalPairing(int $senderUserId, int $targetDeviceId): ?int
+    public function findById(int $id): ?array
     {
-        if ($this->findActiveBySender($senderUserId)) {
-            return null;
-        }
-        return $this->createPairing($senderUserId, $targetDeviceId, 'active');
-    }
-
-    public function findPendingById(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare("SELECT * FROM pairings WHERE id = :id AND status = 'pending' LIMIT 1");
+        $stmt = $this->pdo->prepare('SELECT * FROM pairings WHERE id = :id LIMIT 1');
         $stmt->execute(['id' => $id]);
         $row = $stmt->fetch();
         return $row ?: null;
@@ -71,77 +76,64 @@ final class PairingRepository
         return (int) $this->pdo->lastInsertId();
     }
 
-    public function updateStatus(int $id, string $status): bool
+    public function createReciprocalPairing(int $senderUserId, int $targetDeviceId): ?int
+    {
+        $check = $this->pdo->prepare(
+            "SELECT id FROM pairings WHERE sender_user_id = :s AND target_device_id = :t LIMIT 1"
+        );
+        $check->execute(['s' => $senderUserId, 't' => $targetDeviceId]);
+        if ($check->fetch()) {
+            return null;
+        }
+        return $this->createPairing($senderUserId, $targetDeviceId, 'active');
+    }
+
+    public function unlink(int $pairingId, int $userId): bool
     {
         $stmt = $this->pdo->prepare(
-            "UPDATE pairings SET status = :status, responded_at = NOW() WHERE id = :id AND status = 'pending'"
+            "UPDATE pairings SET status = 'rejected', responded_at = NOW()
+             WHERE id = :id AND sender_user_id = :uid AND status = 'active'"
         );
-        $stmt->execute(['status' => $status, 'id' => $id]);
+        $stmt->execute(['id' => $pairingId, 'uid' => $userId]);
         return $stmt->rowCount() > 0;
     }
 
-    public function createInvite(string $token, int $deviceId, int $createdBy, string $expiresAt): void
+    public function createPairingCode(string $code, int $userId, int $deviceId, string $expiresAt): void
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO invite_tokens (token, device_id, created_by_user_id, expires_at) VALUES (:token, :did, :uid, :exp)'
+            'INSERT INTO pairing_codes (code, owner_user_id, device_id, expires_at)
+             VALUES (:code, :uid, :did, :exp)'
         );
-        $stmt->execute(['token' => $token, 'did' => $deviceId, 'uid' => $createdBy, 'exp' => $expiresAt]);
+        $stmt->execute(['code' => $code, 'uid' => $userId, 'did' => $deviceId, 'exp' => $expiresAt]);
     }
 
-    public function findInvite(string $token): ?array
+    public function invalidateCodesForUser(int $userId): void
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM invite_tokens WHERE token = :token AND consumed_at IS NULL AND expires_at > NOW() LIMIT 1'
+            'UPDATE pairing_codes SET consumed_at = NOW()
+             WHERE owner_user_id = :uid AND consumed_at IS NULL'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute(['uid' => $userId]);
+    }
+
+    public function findValidCode(string $code): ?array
+    {
+        $code = strtoupper(trim($code));
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM pairing_codes
+             WHERE code = :code AND consumed_at IS NULL AND expires_at > NOW()
+             LIMIT 1'
+        );
+        $stmt->execute(['code' => $code]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
 
-    public function consumeInvite(string $token): void
-    {
-        $stmt = $this->pdo->prepare('UPDATE invite_tokens SET consumed_at = NOW() WHERE token = :token');
-        $stmt->execute(['token' => $token]);
-    }
-
-    public function createRequest(int $fromUserId, int $toDeviceId): int
+    public function consumeCode(string $code): void
     {
         $stmt = $this->pdo->prepare(
-            "INSERT INTO pairing_requests (from_user_id, to_device_id, status) VALUES (:from, :to, 'pending')"
+            'UPDATE pairing_codes SET consumed_at = NOW() WHERE code = :code'
         );
-        $stmt->execute(['from' => $fromUserId, 'to' => $toDeviceId]);
-        return (int) $this->pdo->lastInsertId();
-    }
-
-    public function findPendingRequest(int $id): ?array
-    {
-        $stmt = $this->pdo->prepare("SELECT * FROM pairing_requests WHERE id = :id AND status = 'pending' LIMIT 1");
-        $stmt->execute(['id' => $id]);
-        $row = $stmt->fetch();
-        return $row ?: null;
-    }
-
-    public function updateRequestStatus(int $id, string $status): bool
-    {
-        $stmt = $this->pdo->prepare(
-            "UPDATE pairing_requests SET status = :status, responded_at = NOW() WHERE id = :id AND status = 'pending'"
-        );
-        $stmt->execute(['status' => $status, 'id' => $id]);
-        return $stmt->rowCount() > 0;
-    }
-
-    public function listPendingRequestsForDevice(int $deviceId): array
-    {
-        $stmt = $this->pdo->prepare(
-            "SELECT pr.*, u.email AS from_email, p.id AS pairing_id
-             FROM pairing_requests pr
-             JOIN users u ON u.id = pr.from_user_id
-             JOIN pairings p ON p.sender_user_id = pr.from_user_id
-                 AND p.target_device_id = pr.to_device_id AND p.status = 'pending'
-             WHERE pr.to_device_id = :did AND pr.status = 'pending'
-             ORDER BY pr.created_at DESC"
-        );
-        $stmt->execute(['did' => $deviceId]);
-        return $stmt->fetchAll();
+        $stmt->execute(['code' => strtoupper(trim($code))]);
     }
 }

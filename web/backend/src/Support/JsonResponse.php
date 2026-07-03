@@ -10,7 +10,8 @@ final class JsonResponse
 {
     public static function ok(Response $response, array $data, int $status = 200): Response
     {
-        $response->getBody()->write((string) json_encode($data, JSON_THROW_ON_ERROR));
+        $flags = JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE;
+        $response->getBody()->write((string) json_encode($data, $flags));
         return $response
             ->withHeader('Content-Type', 'application/json')
             ->withStatus($status);

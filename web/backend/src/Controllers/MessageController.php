@@ -19,14 +19,16 @@ final class MessageController
     {
         $userId = (int) $request->getAttribute('user_id');
         $params = $request->getQueryParams();
-        $targetDeviceId = (int) ($params['target_device_id'] ?? 0);
-        $bacm = (string) $request->getBody();
-        if ($targetDeviceId <= 0) {
-            return JsonResponse::error($response, 'target_device_id required', 400);
-        }
+        $targetId = (int) ($params['target_device_id'] ?? 0);
+        $body = $request->getBody()->getContents();
+        $parsed = (array) $request->getParsedBody();
+        $scheduledAt = isset($parsed['scheduled_at']) ? (string) $parsed['scheduled_at'] : null;
+        $displayDuration = isset($parsed['display_duration_sec'])
+            ? (int) $parsed['display_duration_sec']
+            : null;
         try {
-            $data = $this->messages->send($userId, $targetDeviceId, $bacm);
-            return JsonResponse::ok($response, $data, 201);
+            $data = $this->messages->send($userId, $targetId, $body, $scheduledAt, $displayDuration);
+            return JsonResponse::ok($response, $data);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
         }
@@ -39,7 +41,7 @@ final class MessageController
         $page = max(1, (int) ($params['page'] ?? 1));
         $perPage = min(50, max(1, (int) ($params['per_page'] ?? 20)));
         $items = $this->messages->listSent($userId, $page, $perPage);
-        return JsonResponse::ok($response, ['ok' => true, 'items' => $items, 'page' => $page]);
+        return JsonResponse::ok($response, ['ok' => true, 'items' => $items]);
     }
 
     public function preview(Request $request, Response $response, array $args): Response

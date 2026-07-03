@@ -34,19 +34,28 @@
     ]);
     const cards = $("statusCards");
     cards.innerHTML = "";
-    const owned = deviceRes.device;
+    const devices = deviceRes.devices || (deviceRes.device ? [deviceRes.device] : []);
     const pairing = pairingRes;
+    const owned = devices[0];
     cards.appendChild(card(
       "Ma boite",
-      owned ? `${owned.device_name} (id ${owned.id})` : "Aucune boite associee",
+      owned ? `${owned.display_name || owned.device_name} (id ${owned.id})` : "Aucune boite associee",
     ));
+    const targets = pairing.linked_targets || (pairing.linked_target ? [pairing.linked_target] : []);
     cards.appendChild(card(
-      "Partenaire",
-      pairing.linked_target
-        ? `${pairing.linked_target.device_name} (id ${pairing.linked_target.device_id})`
-        : "Pas de partenaire",
+      "Contacts",
+      targets.length
+        ? targets.map((t) => `${t.display_name || t.device_name} (id ${t.device_id})`).join(", ")
+        : "Aucun contact lie",
     ));
-    renderPending(pairing.pending_requests || []);
+    if (owned) {
+      const label = owned.online
+        ? "En ligne"
+        : (owned.last_seen_seconds_ago != null
+          ? `Vu il y a ${Math.max(1, Math.round(owned.last_seen_seconds_ago / 60))} min`
+          : "Hors ligne");
+      cards.appendChild(card("Statut boite", label));
+    }
   }
 
   function card(title, body) {
@@ -54,38 +63,6 @@
     div.className = "card";
     div.innerHTML = `<strong>${title}</strong>${body}`;
     return div;
-  }
-
-  function renderPending(requests) {
-    const box = $("pendingRequests");
-    box.innerHTML = "";
-    if (!requests.length) return;
-    const title = document.createElement("p");
-    title.className = "muted";
-    title.textContent = "Demandes en attente:";
-    box.appendChild(title);
-    requests.forEach((r) => {
-      const row = document.createElement("div");
-      row.className = "row";
-      row.style.marginTop = "8px";
-      const label = document.createElement("span");
-      label.textContent = `${r.from_email} (#${r.pairing_id})`;
-      const btn = document.createElement("button");
-      btn.type = "button";
-      btn.className = "btn";
-      btn.textContent = "Accepter";
-      btn.addEventListener("click", async () => {
-        try {
-          await Api.acceptRequest(r.pairing_id);
-          await refreshDashboard();
-        } catch (e) {
-          alert(e.message);
-        }
-      });
-      row.appendChild(label);
-      row.appendChild(btn);
-      box.appendChild(row);
-    });
   }
 
   function showMain(email) {
@@ -99,12 +76,12 @@
     $("authPanel").classList.remove("hidden");
   }
 
-  async function claimWithRetry(deviceName, serialNumber) {
+  async function claimWithRetry(uuid, serialNumber) {
     const delays = [2000, 3000, 3000, 3000, 3000, 3000];
     for (let i = 0; i < delays.length; i++) {
-      logBle(`Claim attempt ${i + 1} (${deviceName})...`);
+      logBle(`Claim attempt ${i + 1}...`);
       try {
-        await Api.claimDevice(deviceName, serialNumber);
+        await Api.claimDevice(uuid, serialNumber);
         logBle("Claim OK");
         return;
       } catch (e) {
@@ -169,7 +146,7 @@
       $("bleDisconnectBtn").disabled = false;
       $("wifiProvisionBtn").disabled = false;
       if (info.identity) {
-        logBle(`Identity: ${info.identity.deviceName}${info.identity.serialNumber ? " / " + info.identity.serialNumber : ""}`);
+        logBle(`Identity: ${info.identity.deviceName} / ${info.identity.serialNumber || "?"}`);
       } else {
         logBle("Warning: box identity not read");
       }
@@ -200,8 +177,8 @@
       }
       logBle("WiFi OK on box");
       const id = Ble.getIdentity();
-      if (!id?.deviceName) throw new Error("Box identity missing, reflash firmware");
-      await claimWithRetry(id.deviceName, id.serialNumber);
+      if (!id?.uuid || !id?.serialNumber) throw new Error("Box identity incomplete, reflash firmware");
+      await claimWithRetry(id.uuid, id.serialNumber);
       await refreshDashboard();
       logBle("Setup complete");
     } catch (e) {
@@ -209,24 +186,35 @@
     }
   });
 
-  $("inviteBtn").addEventListener("click", async () => {
+  $("generateCodeBtn").addEventListener("click", async () => {
     try {
-      const data = await Api.createInvite();
-      const el = $("inviteUrl");
-      el.textContent = data.url || data.deep_link || JSON.stringify(data);
-      el.classList.remove("hidden");
+      const data = await Api.generatePairingCode();
+      $("pairingCode").textContent = data.code;
+      $("pairingCode").classList.remove("hidden");
+      logBle(`Code generated: ${data.code}`);
     } catch (e) {
       alert(e.message);
     }
   });
 
-  $("acceptInviteBtn").addEventListener("click", async () => {
-    const raw = $("inviteToken").value.trim();
-    const token = raw.includes("/") ? raw.split("/").pop() : raw;
+  $("copyCodeBtn").addEventListener("click", async () => {
+    const code = $("pairingCode").textContent.trim();
+    if (!code) return;
     try {
-      await Api.acceptInvite(token);
+      await navigator.clipboard.writeText(code);
+      logBle("Code copied");
+    } catch (e) {
+      alert(code);
+    }
+  });
+
+  $("acceptCodeBtn").addEventListener("click", async () => {
+    const code = $("acceptCodeInput").value.trim();
+    if (!code) return;
+    try {
+      await Api.acceptPairingCode(code);
       await refreshDashboard();
-      alert("Invitation acceptee");
+      alert("Contact lie");
     } catch (e) {
       alert(e.message);
     }
@@ -237,8 +225,9 @@
     if (!text) return;
     try {
       const pairing = await Api.getPairingState();
-      const targetId = pairing.linked_target?.device_id;
-      if (!targetId) throw new Error("No partner linked");
+      const targets = pairing.linked_targets || (pairing.linked_target ? [pairing.linked_target] : []);
+      const targetId = targets[0]?.device_id;
+      if (!targetId) throw new Error("No contact linked");
       const bacm = Bacm.packSimpleText(text);
       await Api.sendMessage(targetId, bacm);
       $("msgResult").textContent = "Message envoye";

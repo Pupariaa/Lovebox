@@ -12,21 +12,31 @@ final class MessageRepository
     {
     }
 
-    public function create(int $senderUserId, int $targetDeviceId, string $bacmData, ?string $previewBase64): int
-    {
+    public function create(
+        int $senderUserId,
+        int $targetDeviceId,
+        string $bacmData,
+        ?string $previewBase64,
+        ?string $scheduledAt = null,
+        ?int $displayDurationSec = null
+    ): int {
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
-                "INSERT INTO messages (sender_user_id, target_device_id, bacm_data, status)
-                 VALUES (:sender, :target, :data, 'queued')"
+                "INSERT INTO messages (sender_user_id, target_device_id, bacm_data, status, scheduled_at, display_duration_sec)
+                 VALUES (:sender, :target, :data, 'queued', :sched, :dur)"
             );
             $stmt->bindValue('sender', $senderUserId, PDO::PARAM_INT);
             $stmt->bindValue('target', $targetDeviceId, PDO::PARAM_INT);
             $stmt->bindValue('data', $bacmData, PDO::PARAM_LOB);
+            $stmt->bindValue('sched', $scheduledAt);
+            $stmt->bindValue('dur', $displayDurationSec, $displayDurationSec === null ? PDO::PARAM_NULL : PDO::PARAM_INT);
             $stmt->execute();
             $messageId = (int) $this->pdo->lastInsertId();
 
-            $deviceStmt = $this->pdo->prepare('SELECT device_name FROM devices WHERE id = :id');
+            $deviceStmt = $this->pdo->prepare(
+                'SELECT COALESCE(NULLIF(display_name, \'\'), device_name) AS label FROM devices WHERE id = :id'
+            );
             $deviceStmt->execute(['id' => $targetDeviceId]);
             $deviceName = (string) ($deviceStmt->fetchColumn() ?: '');
 
@@ -50,13 +60,27 @@ final class MessageRepository
         }
     }
 
+    public function requeueStaleDelivering(int $olderThanSeconds = 120): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'queued', delivered_at = NULL
+             WHERE status = 'delivering'
+               AND delivered_at IS NOT NULL
+               AND delivered_at < DATE_SUB(NOW(), INTERVAL :sec SECOND)"
+        );
+        $stmt->execute(['sec' => $olderThanSeconds]);
+        return $stmt->rowCount();
+    }
+
     public function claimNextQueued(int $deviceId): ?array
     {
+        $this->requeueStaleDelivering();
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
-                "SELECT id, bacm_data FROM messages
+                "SELECT id, bacm_data, display_duration_sec FROM messages
                  WHERE target_device_id = :did AND status = 'queued'
+                   AND (scheduled_at IS NULL OR scheduled_at <= NOW())
                  ORDER BY created_at ASC
                  LIMIT 1
                  FOR UPDATE SKIP LOCKED"
@@ -87,6 +111,16 @@ final class MessageRepository
         $stmt = $this->pdo->prepare(
             "UPDATE messages SET status = 'acked', acked_at = NOW()
              WHERE id = :id AND target_device_id = :did AND status IN ('delivering', 'delivered')"
+        );
+        $stmt->execute(['id' => $messageId, 'did' => $deviceId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function nack(int $messageId, int $deviceId, string $reason = ''): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'queued', delivered_at = NULL
+             WHERE id = :id AND target_device_id = :did AND status = 'delivering'"
         );
         $stmt->execute(['id' => $messageId, 'did' => $deviceId]);
         return $stmt->rowCount() > 0;

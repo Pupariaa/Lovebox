@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bac\Repositories;
 
+use Bac\Support\TokenUtil;
 use PDO;
 
 final class UserRepository
@@ -72,5 +73,63 @@ final class UserRepository
     {
         $stmt = $this->pdo->prepare('UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = :hash');
         $stmt->execute(['hash' => $tokenHash]);
+    }
+
+    public function update(int $userId, array $fields): void
+    {
+        $sets = [];
+        $params = ['id' => $userId];
+        foreach ($fields as $key => $value) {
+            $sets[] = "$key = :$key";
+            $params[$key] = $value;
+        }
+        if ($sets === []) {
+            return;
+        }
+        $sql = 'UPDATE users SET ' . implode(', ', $sets) . ' WHERE id = :id';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+    }
+
+    public function findByOAuth(string $provider, string $providerUserId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT u.* FROM users u
+             JOIN oauth_identities o ON o.user_id = u.id
+             WHERE o.provider = :p AND o.provider_user_id = :pid LIMIT 1'
+        );
+        $stmt->execute(['p' => $provider, 'pid' => $providerUserId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public function linkOAuth(int $userId, string $provider, string $providerUserId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'INSERT IGNORE INTO oauth_identities (provider, provider_user_id, user_id)
+             VALUES (:p, :pid, :uid)'
+        );
+        $stmt->execute(['p' => $provider, 'pid' => $providerUserId, 'uid' => $userId]);
+    }
+
+    public function createOAuthUser(string $email, string $provider, string $providerUserId): int
+    {
+        $this->pdo->beginTransaction();
+        try {
+            $stmt = $this->pdo->prepare(
+                'INSERT INTO users (email, password_hash, email_verified_at) VALUES (:email, :hash, NOW())'
+            );
+            $stmt->execute([
+                'email' => strtolower(trim($email)),
+                'hash' => password_hash(TokenUtil::randomHex(24), PASSWORD_BCRYPT, ['cost' => 12]),
+            ]);
+            $userId = (int) $this->pdo->lastInsertId();
+            $this->linkOAuth($userId, $provider, $providerUserId);
+            $this->pdo->commit();
+            return $userId;
+        } catch (\Throwable $e) {
+            $this->pdo->rollBack();
+            throw $e;
+        }
     }
 }

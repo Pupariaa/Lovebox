@@ -20,10 +20,14 @@ final class MessageService
         $this->longPollMax = $settings['long_poll_max_seconds'];
     }
 
-    public function send(int $userId, int $targetDeviceId, string $bacmData): array
-    {
-        $active = $this->pairings->findActiveBySender($userId);
-        if (!$active || (int) $active['target_device_id'] !== $targetDeviceId) {
+    public function send(
+        int $userId,
+        int $targetDeviceId,
+        string $bacmData,
+        ?string $scheduledAt = null,
+        ?int $displayDurationSec = null
+    ): array {
+        if (!$this->pairings->findActiveBySenderAndTarget($userId, $targetDeviceId)) {
             throw new \InvalidArgumentException('no active pairing to this device');
         }
         $err = $this->bacm->validate($bacmData);
@@ -31,7 +35,14 @@ final class MessageService
             throw new \InvalidArgumentException($err);
         }
         $preview = $this->bacm->extractPreviewBase64($bacmData);
-        $messageId = $this->messages->create($userId, $targetDeviceId, $bacmData, $preview);
+        $messageId = $this->messages->create(
+            $userId,
+            $targetDeviceId,
+            $bacmData,
+            $preview,
+            $scheduledAt,
+            $displayDurationSec
+        );
         return ['ok' => true, 'message_id' => $messageId];
     }
 
@@ -52,6 +63,11 @@ final class MessageService
     public function ack(int $deviceId, int $messageId): bool
     {
         return $this->messages->ack($messageId, $deviceId);
+    }
+
+    public function nack(int $deviceId, int $messageId): bool
+    {
+        return $this->messages->nack($messageId, $deviceId);
     }
 
     public function listSent(int $userId, int $page, int $perPage): array

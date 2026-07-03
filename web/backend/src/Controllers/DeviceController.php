@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bac\Controllers;
 
+use Bac\Repositories\DeviceCommandRepository;
 use Bac\Repositories\DeviceRepository;
 use Bac\Services\DeviceService;
 use Bac\Services\MessageService;
@@ -16,6 +17,7 @@ final class DeviceController
     public function __construct(
         private DeviceService $devices,
         private DeviceRepository $deviceRepo,
+        private DeviceCommandRepository $commands,
         private MessageService $messages
     ) {
     }
@@ -57,7 +59,24 @@ final class DeviceController
         return $response
             ->withHeader('Content-Type', 'application/octet-stream')
             ->withHeader('X-Message-Id', (string) $msg['id'])
+            ->withHeader('X-Display-Duration-Sec', (string) ($msg['display_duration_sec'] ?? ''))
             ->withStatus(200);
+    }
+
+    public function pollCommands(Request $request, Response $response): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $this->deviceRepo->touchHeartbeat((int) $device['id']);
+        $cmd = $this->commands->claimNext((int) $device['id']);
+        if (!$cmd) {
+            return $response->withStatus(204);
+        }
+        return JsonResponse::ok($response, [
+            'ok' => true,
+            'command_id' => (int) $cmd['id'],
+            'command_type' => $cmd['command_type'],
+            'payload' => $cmd['payload'],
+        ]);
     }
 
     public function ack(Request $request, Response $response, array $args): Response
@@ -70,6 +89,36 @@ final class DeviceController
         return JsonResponse::ok($response, ['ok' => true]);
     }
 
+    public function nack(Request $request, Response $response, array $args): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $messageId = (int) ($args['id'] ?? 0);
+        if (!$this->messages->nack((int) $device['id'], $messageId)) {
+            return JsonResponse::error($response, 'nack failed', 404);
+        }
+        return JsonResponse::ok($response, ['ok' => true]);
+    }
+
+    public function ackCommand(Request $request, Response $response, array $args): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $commandId = (int) ($args['id'] ?? 0);
+        if (!$this->commands->ack($commandId, (int) $device['id'])) {
+            return JsonResponse::error($response, 'command ack failed', 404);
+        }
+        return JsonResponse::ok($response, ['ok' => true]);
+    }
+
+    public function failCommand(Request $request, Response $response, array $args): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $commandId = (int) ($args['id'] ?? 0);
+        if (!$this->commands->fail($commandId, (int) $device['id'])) {
+            return JsonResponse::error($response, 'command fail failed', 404);
+        }
+        return JsonResponse::ok($response, ['ok' => true]);
+    }
+
     public function claim(Request $request, Response $response): Response
     {
         $userId = (int) $request->getAttribute('user_id');
@@ -77,8 +126,8 @@ final class DeviceController
         try {
             $data = $this->devices->claim(
                 $userId,
-                (string) ($body['device_name'] ?? ''),
-                isset($body['serial_number']) ? (string) $body['serial_number'] : null
+                (string) ($body['uuid'] ?? ''),
+                (string) ($body['serial_number'] ?? '')
             );
             return JsonResponse::ok($response, ['ok' => true, 'device' => $data]);
         } catch (\InvalidArgumentException $e) {
@@ -89,23 +138,34 @@ final class DeviceController
     public function me(Request $request, Response $response): Response
     {
         $userId = (int) $request->getAttribute('user_id');
-        $device = $this->deviceRepo->findByOwner($userId);
-        if (!$device) {
-            return JsonResponse::ok($response, ['ok' => true, 'device' => null]);
-        }
+        $devices = $this->devices->listOwned($userId);
         return JsonResponse::ok($response, [
             'ok' => true,
-            'device' => $this->devices->formatDevice($device),
+            'devices' => $devices,
+            'device' => $devices[0] ?? null,
         ]);
     }
 
-    public function updateMe(Request $request, Response $response): Response
+    public function updateMe(Request $request, Response $response, array $args): Response
     {
         $userId = (int) $request->getAttribute('user_id');
+        $deviceId = (int) ($args['id'] ?? 0);
         $body = (array) $request->getParsedBody();
         try {
-            $data = $this->devices->updateOwned($userId, $body);
+            $data = $this->devices->updateOwned($userId, $deviceId, $body);
             return JsonResponse::ok($response, ['ok' => true, 'device' => $data]);
+        } catch (\InvalidArgumentException $e) {
+            return JsonResponse::error($response, $e->getMessage(), 400);
+        }
+    }
+
+    public function unclaim(Request $request, Response $response, array $args): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $deviceId = (int) ($args['id'] ?? 0);
+        try {
+            $this->devices->unclaimOwned($userId, $deviceId);
+            return JsonResponse::ok($response, ['ok' => true]);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
         }

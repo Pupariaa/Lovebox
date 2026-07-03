@@ -15,38 +15,28 @@ final class PairingController
     {
     }
 
-    public function invite(Request $request, Response $response): Response
+    public function generateCode(Request $request, Response $response): Response
     {
         $userId = (int) $request->getAttribute('user_id');
+        $body = (array) $request->getParsedBody();
+        $deviceId = isset($body['device_id']) ? (int) $body['device_id'] : null;
         try {
-            $data = $this->pairings->createInvite($userId);
+            $data = $this->pairings->generateCode($userId, $deviceId ?: null);
             return JsonResponse::ok($response, ['ok' => true] + $data);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
         }
     }
 
-    public function acceptInvite(Request $request, Response $response): Response
+    public function acceptCode(Request $request, Response $response): Response
     {
         $userId = (int) $request->getAttribute('user_id');
         $body = (array) $request->getParsedBody();
         try {
-            $data = $this->pairings->acceptInvite($userId, (string) ($body['token'] ?? ''));
-            return JsonResponse::ok($response, ['ok' => true] + $data);
-        } catch (\InvalidArgumentException $e) {
-            return JsonResponse::error($response, $e->getMessage(), 400);
-        }
-    }
-
-    public function request(Request $request, Response $response): Response
-    {
-        $userId = (int) $request->getAttribute('user_id');
-        $body = (array) $request->getParsedBody();
-        try {
-            $data = $this->pairings->requestPairing(
+            $data = $this->pairings->acceptCode(
                 $userId,
-                isset($body['device_name']) ? (string) $body['device_name'] : null,
-                isset($body['uuid']) ? (string) $body['uuid'] : null
+                (string) ($body['code'] ?? ''),
+                isset($body['device_id']) ? (int) $body['device_id'] : null
             );
             return JsonResponse::ok($response, ['ok' => true] + $data);
         } catch (\InvalidArgumentException $e) {
@@ -54,22 +44,11 @@ final class PairingController
         }
     }
 
-    public function accept(Request $request, Response $response, array $args): Response
+    public function unlink(Request $request, Response $response, array $args): Response
     {
         $userId = (int) $request->getAttribute('user_id');
         try {
-            $data = $this->pairings->acceptPairing($userId, (int) ($args['id'] ?? 0));
-            return JsonResponse::ok($response, ['ok' => true] + $data);
-        } catch (\InvalidArgumentException $e) {
-            return JsonResponse::error($response, $e->getMessage(), 400);
-        }
-    }
-
-    public function reject(Request $request, Response $response, array $args): Response
-    {
-        $userId = (int) $request->getAttribute('user_id');
-        try {
-            $this->pairings->rejectPairing($userId, (int) ($args['id'] ?? 0));
+            $this->pairings->unlink($userId, (int) ($args['id'] ?? 0));
             return JsonResponse::ok($response, ['ok' => true]);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);

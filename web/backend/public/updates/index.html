@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Boite a Coeur — OTA</title>
+  <style>
+    :root { color-scheme: dark; font-family: system-ui, sans-serif; }
+    body { margin: 0; background: #12030f; color: #e8eef8; }
+    main { max-width: 720px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 1.4rem; margin: 0 0 8px; }
+    p { color: #9ab0cc; line-height: 1.5; }
+    form, section { background: #1a0a18; border: 1px solid #3a2848; border-radius: 12px; padding: 16px; margin: 16px 0; }
+    label { display: block; margin: 12px 0 6px; font-size: 0.9rem; }
+    input, textarea { width: 100%; box-sizing: border-box; padding: 10px; border-radius: 8px; border: 1px solid #4a3858; background: #0f0610; color: #fff; }
+    button { margin-top: 16px; padding: 10px 16px; border: 0; border-radius: 8px; background: #5e96ff; color: #fff; font-weight: 600; cursor: pointer; }
+    button.secondary { background: #2a4a38; }
+    button.danger { background: #c44; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+    th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid #2a1830; vertical-align: top; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.75rem; }
+    .badge.on { background: #1f5a32; color: #9ef0b0; }
+    .badge.off { background: #3a2838; color: #bbb; }
+    #log { white-space: pre-wrap; font-family: ui-monospace, monospace; font-size: 0.85rem; color: #b8c8e0; min-height: 48px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Mises a jour firmware</h1>
+  <p>Upload du binaire Arduino (<code>firmware.bin</code>) et optionnellement un zip du dossier <code>assets/</code> uniquement. La config utilisateur est en NVS ; la FFAT ne contient que <code>/assets/</code>.</p>
+
+  <form id="uploadForm">
+    <label>Version (semver)</label>
+    <input name="version" required placeholder="1.0.1">
+
+    <label>Firmware (.bin)</label>
+    <input type="file" name="firmware" accept=".bin" required>
+
+    <label>Assets zip (dossier assets/ seulement, optionnel)</label>
+    <input type="file" name="assets" accept=".zip">
+
+    <label>Version minimale requise sur le device (optionnel)</label>
+    <input name="min_version" placeholder="1.0.0">
+
+    <label>Notes</label>
+    <textarea name="notes" rows="3"></textarea>
+
+    <button type="submit">Enregistrer le build</button>
+  </form>
+
+  <section>
+    <h2>Test device (OTA unique)</h2>
+    <label>Serial number</label>
+    <input id="testSerial" placeholder="BACXS32W23262026R2">
+    <label>Release id (optional, default active)</label>
+    <input id="testReleaseId" type="number" placeholder="">
+    <label><input type="checkbox" id="testForce"> Force (ignore version, cancel open OTA)</label>
+    <button type="button" class="secondary" id="btnLookup">Lookup</button>
+    <button type="button" id="btnNotifyDevice">Envoyer OTA a ce device</button>
+    <pre id="testLog" style="margin-top:12px;color:#b8c8e0;font-size:0.85rem"></pre>
+  </section>
+
+  <section>
+    <h2>Releases</h2>
+    <div id="log"></div>
+    <table>
+      <thead>
+        <tr><th>Version</th><th>Taille FW</th><th>Assets</th><th>Statut</th><th></th></tr>
+      </thead>
+      <tbody id="releasesBody"></tbody>
+    </table>
+  </section>
+</main>
+<script>
+const api = '/api/v1';
+const logEl = document.getElementById('log');
+const bodyEl = document.getElementById('releasesBody');
+
+function adminKey() {
+  let key = localStorage.getItem('ota_admin_key') || '';
+  if (!key) {
+    key = prompt('OTA admin key') || '';
+    if (key) localStorage.setItem('ota_admin_key', key);
+  }
+  return key;
+}
+
+function adminHeaders(extra) {
+  const h = { 'X-Ota-Admin-Key': adminKey(), ...(extra || {}) };
+  return h;
+}
+
+function log(msg) {
+  logEl.textContent = msg;
+}
+
+async function loadReleases() {
+  const res = await fetch(api + '/updates/releases', { headers: adminHeaders() });
+  const data = await res.json();
+  bodyEl.innerHTML = '';
+  for (const r of data.releases || []) {
+    const tr = document.createElement('tr');
+    const assets = r.assets_size ? (Math.round(r.assets_size / 1024) + ' KB') : '-';
+    const fw = Math.round(r.firmware_size / 1024) + ' KB';
+    const badge = r.published ? '<span class="badge on">publie</span>' : '<span class="badge off">brouillon</span>';
+    tr.innerHTML = `
+      <td><strong>${r.version}</strong><br><small>${r.notes || ''}</small></td>
+      <td>${fw}</td>
+      <td>${assets}</td>
+      <td>${badge}</td>
+      <td>${r.published
+        ? `<button class="secondary" data-notify="${r.id}">Renvoyer OTA</button>`
+        : `<button class="danger" data-id="${r.id}">Publier</button>`}</td>
+    `;
+    bodyEl.appendChild(tr);
+  }
+  bodyEl.querySelectorAll('button[data-id]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-id');
+      log('Publication...');
+      const res = await fetch(api + '/updates/releases/' + id + '/publish', { method: 'POST', headers: adminHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        log('Erreur: ' + (data.error || res.status));
+        return;
+      }
+      log('Publie. Devices notifies: ' + (data.devices_notified ?? 0));
+      loadReleases();
+    });
+  });
+  bodyEl.querySelectorAll('button[data-notify]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-notify');
+      log('Renvoi OTA...');
+      const res = await fetch(api + '/updates/releases/' + id + '/notify', { method: 'POST', headers: adminHeaders() });
+      const data = await res.json();
+      if (!res.ok) {
+        log('Erreur: ' + (data.error || res.status));
+        return;
+      }
+      log('OTA renvoye. Devices notifies: ' + (data.devices_notified ?? 0));
+    });
+  });
+}
+
+document.getElementById('uploadForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  log('Upload...');
+  const res = await fetch(api + '/updates/upload', { method: 'POST', body: fd, headers: adminHeaders() });
+  const data = await res.json();
+  if (!res.ok) {
+    log('Erreur: ' + (data.error || res.status));
+    return;
+  }
+  log('Build ' + data.release.version + ' enregistre.');
+  form.reset();
+  loadReleases();
+});
+
+loadReleases();
+
+const testLog = document.getElementById('testLog');
+function testMsg(msg) { testLog.textContent = typeof msg === 'string' ? msg : JSON.stringify(msg, null, 2); }
+
+document.getElementById('btnLookup').addEventListener('click', async () => {
+  const serial = document.getElementById('testSerial').value.trim();
+  if (!serial) { testMsg('serial required'); return; }
+  const res = await fetch(api + '/updates/devices/lookup?serial_number=' + encodeURIComponent(serial), { headers: adminHeaders() });
+  const data = await res.json();
+  testMsg(res.ok ? data : (data.error || res.status));
+});
+
+document.getElementById('btnNotifyDevice').addEventListener('click', async () => {
+  const serial = document.getElementById('testSerial').value.trim();
+  if (!serial) { testMsg('serial required'); return; }
+  const body = { serial_number: serial };
+  const rid = document.getElementById('testReleaseId').value.trim();
+  if (rid) body.release_id = parseInt(rid, 10);
+  if (document.getElementById('testForce').checked) body.force = true;
+  const res = await fetch(api + '/updates/devices/notify', {
+    method: 'POST',
+    headers: adminHeaders({ 'Content-Type': 'application/json' }),
+    body: JSON.stringify(body)
+  });
+  const data = await res.json();
+  testMsg(res.ok ? data : (data.error || res.status));
+});
+</script>
+</body>
+</html>
