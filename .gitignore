@@ -1,6 +1,17 @@
 firmware/**/ble-sim/.venv/
 firmware/**/__pycache__/
+factory/**/__pycache__/
 firmware/**/data/user.txt
+factory/tools/bin/*
+!factory/tools/bin/.gitkeep
+factory/tools/tmp/
+factory/archives/**
+!factory/archives/**/
+!factory/archives/**/*.json
+!factory/archives/**/*.txt
+factory/archives/**/*.bin
+firmware/**/build/
+firmware/boite-a-coeur/mkfatfs.bin
 web/backend/vendor/
 web/backend/.env
 applications/**/local.properties

@@ -1,0 +1,64 @@
+{
+  "boxes": [
+    {
+      "device_name": "BaCxs32h1004",
+      "serial_number": "BACXS32H10042026R2",
+      "uuid": "16625722601170098530436647042114867649287101602392818246216666095839846458204535524298761289121129524394149615217580918393757733",
+      "built_at": "2026-07-03T05:10:49.892355Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32H10042026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260703T051117Z",
+          "firmware_version": "1.0.0",
+          "archive_dir": "factory/archives/BACXS32H10042026R2/20260703T051117Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.0",
+      "last_provisioned_at": "20260703T051117Z"
+    },
+    {
+      "device_name": "BaCxs32p1005",
+      "serial_number": "BACXS32P10052026R2",
+      "uuid": "14901966463246443618044254305921861123418377079489980201543750521007250365481408962794255781717495889331005772949110075829731748",
+      "built_at": "2026-07-03T05:15:07.922762Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32P10052026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260703T051540Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T051540Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T052620Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T052620Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T053600Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T053600Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        },
+        {
+          "provisioned_at": "20260703T055410Z",
+          "firmware_version": "1.0.1",
+          "archive_dir": "factory/archives/BACXS32P10052026R2/20260703T055410Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.1",
+      "last_provisioned_at": "20260703T055410Z"
+    }
+  ],
+  "next_suffix": 1006
+}

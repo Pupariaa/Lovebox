@@ -1,0 +1,23 @@
+{
+  "serial_number": "BACXS32P10052026R2",
+  "device_name": "BaCxs32p1005",
+  "uuid": "14901966463246443618044254305921861123418377079489980201543750521007250365481408962794255781717495889331005772949110075829731748",
+  "firmware_version": "1.0.1",
+  "provisioned_at": "20260703T052620Z",
+  "port": "COM120",
+  "fqbn": "esp32:esp32:esp32s3:app3M_fat9M_16MB",
+  "artifacts": {
+    "bootloader": "boite-a-coeur.ino.bootloader.bin",
+    "partitions": "boite-a-coeur.ino.partitions.bin",
+    "boot_app0": "boot_app0.bin",
+    "firmware": "boite-a-coeur.ino.bin",
+    "ffat": "ffat.bin"
+  },
+  "sha256": {
+    "bootloader": "b41be55ae9a52aeeb21645c51b86c14027f84c2c91bf67bee6aa0e1b15d18e8b",
+    "partitions": "ace02503447d0f470692e65fa76002f2d77a92dc81cd3813d8aa66718d716da9",
+    "boot_app0": "f94c5d786a7a8fab06ac5d10e33bf37711a6697636dc037559ea19cc410a17f0",
+    "firmware": "9ad6aeae22d059b54014c2da50639f1a175cf29eb7a621e782f98552e325ed59",
+    "ffat": "5508ce25419e59c3e0ca0713503651e6daa3da3bfea8cbb2e6c84f22966b7613"
+  }
+}
