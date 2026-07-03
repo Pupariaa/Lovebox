@@ -1,8 +1,22 @@
 # Messages (BACM v1)
 
-Incoming love messages are binary **BACM** blobs received over HTTP, parsed into RAM, and rendered full-screen on the 280×240 display.
+Incoming love messages are binary **BACM** blobs. They can arrive over **cloud long-poll** (production) or **local HTTP** (dev).
 
-## HTTP API
+## Cloud path (production)
+
+`BacCloudClient` long-polls `GET /api/v1/devices/poll` when WiFi is up.
+
+1. Server returns BACM body with headers `X-Message-Id`, `X-Message-Bytes`, optional `X-Display-Duration-Sec` (ephemeral = 10).
+2. Device validates BACM, sends `POST .../ack` (status **received** on server).
+3. UI shows `new_message` (title **Message éphémère** when ephemeral).
+4. User tap → `message_opened`, device sends `POST .../opened`.
+5. User tap (normal) or 10 s timeout (ephemeral) → `POST .../seen`, back to `idle`.
+
+While a message session is active, cloud poll is held but ack/opened/seen posts still flush. The next queued message is delivered only after **seen**.
+
+Duplicate cloud deliveries of the same `message_id` are ignored client-side.
+
+## Local HTTP path (dev)
 
 Server: `BacMessageServer` on port **8080** (started when WiFi is connected and app is idle).
 
@@ -56,15 +70,12 @@ Static layers: one RGB565 bitmap (`w × h × 2`). Animated layers: `frameCount` 
 
 `BacMessageRenderer` draws background then layers in order. Animation advances by FPS timing. The overlay runs in `loop()` via `BacApp::drawMessageOverlay()` on screen `message_opened`.
 
-## Composer (ble-sim)
+## Composer
 
-`ble-sim/static/message_pack.js` builds BACM from HTML canvas elements:
+- **Mobile:** Skia scene editor in `applications/mobile-rn/`
+- **ble-sim:** `ble-sim/static/message_pack.js` builds BACM from HTML canvas
 
-- Fixed canvas 280×240
-- Background fill + optional static/animated layers
-- `packMessage()` emits the binary buffer
-
-Send via the ble-sim UI (**Discover** → select IP → **Send**) or directly:
+Send via ble-sim (**Discover** → select IP → **Send**) or:
 
 ```bash
 curl -X POST --data-binary @message.bacm http://<box-ip>:8080/message
@@ -72,12 +83,14 @@ curl -X POST --data-binary @message.bacm http://<box-ip>:8080/message
 
 ## Memory
 
-Payloads up to **2 097 152** bytes. Allocation prefers PSRAM when available (`heap_caps_malloc` with `MALLOC_CAP_SPIRAM`).
+Payloads up to **2 097 152** bytes. Allocation prefers PSRAM (`heap_caps_malloc` with `MALLOC_CAP_SPIRAM`).
 
 ## User flow
 
-1. Message arrives → `new_message` notification screen
-2. User tap → `message_opened` (firmware screen in `BacScreens.h`)
-3. Touch navigates back to `idle`
+| Step | Screen | Action |
+| --- | --- | --- |
+| 1 | `new_message` | Notification (ephemeral variant when `X-Display-Duration-Sec` set) |
+| 2 | `message_opened` | Tap on `new_message` |
+| 3 | `idle` | Tap to dismiss (normal) or auto after 10 s (ephemeral) |
 
-Messages received during `FirstSetup`, `WifiBoot`, or `Settings` are stored but do not change screen until those modes end.
+Messages received during `FirstSetup`, `WifiBoot`, or `Settings` are stored but do not change screen until those modes end. Settings long-press is blocked during an active message session.

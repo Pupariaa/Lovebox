@@ -22,6 +22,7 @@ public:
         uint16_t frameCount;
         uint32_t dataSize;
         uint8_t *data;
+        bool owned = false;
     };
 
     bool hasMessage() const { return _ready; }
@@ -36,22 +37,69 @@ public:
         _ready = false;
     }
 
-    bool loadFromBinary(const uint8_t *data, size_t len) {
-        clear();
-        if (!data || len < 12) return false;
-        if (memcmp(data, "BACM", 4) != 0) return false;
+    static size_t binaryPayloadSize(const uint8_t *data, size_t len) {
+        if (!data || len < 12) return 0;
+        if (memcmp(data, "BACM", 4) != 0) return 0;
         uint16_t version = (uint16_t)(data[4] | (data[5] << 8));
-        if (version != 1) return false;
+        if (version != 1) return 0;
+        uint16_t w = (uint16_t)(data[6] | (data[7] << 8));
+        uint16_t h = (uint16_t)(data[8] | (data[9] << 8));
+        uint8_t layerCount = data[10];
+        if (w == 0 || h == 0 || layerCount > 8) return 0;
+        size_t off = 12 + (size_t)w * h * 2;
+        if (off > len) return 0;
+        for (uint8_t i = 0; i < layerCount; i++) {
+            if (off + 16 > len) return 0;
+            uint32_t dataSize = (uint32_t)data[off + 12] | ((uint32_t)data[off + 13] << 8) |
+                                ((uint32_t)data[off + 14] << 16) | ((uint32_t)data[off + 15] << 24);
+            if (dataSize == 0) return 0;
+            off += 16 + dataSize;
+            if (off > len) return 0;
+        }
+        return off;
+    }
+
+    static size_t findBacmOffset(const uint8_t *data, size_t len) {
+        if (!data || len < 12) return SIZE_MAX;
+        size_t scanMax = len - 12;
+        if (scanMax > 512) scanMax = 512;
+        for (size_t i = 0; i <= scanMax; i++) {
+            if (memcmp(data + i, "BACM", 4) != 0) continue;
+            if (binaryPayloadSize(data + i, len - i) > 0) return i;
+        }
+        return SIZE_MAX;
+    }
+
+    bool loadFromBinary(const uint8_t *data, size_t len) {
+        return loadFromBinary(data, len, false);
+    }
+
+    bool loadFromBinary(const uint8_t *data, size_t len, bool takeOwnership) {
+        clear();
+        size_t payloadSize = binaryPayloadSize(data, len);
+        if (payloadSize == 0) return false;
+        len = payloadSize;
+        if (takeOwnership) _ownedBuf = (uint8_t *)data;
+        if (!data || len < 12) {
+            clear();
+            return false;
+        }
         _w = (uint16_t)(data[6] | (data[7] << 8));
         _h = (uint16_t)(data[8] | (data[9] << 8));
         _layerCount = data[10];
-        if (_w == 0 || _h == 0 || _layerCount > 8) return false;
         size_t bgBytes = (size_t)_w * _h * 2;
         size_t off = 12;
-        if (off + bgBytes > len) return false;
-        _bg = allocRgb565(bgBytes);
-        if (!_bg) return false;
-        memcpy(_bg, data + off, bgBytes);
+        if (off + bgBytes > len) {
+            clear();
+            return false;
+        }
+        if (takeOwnership) {
+            _bg = (uint16_t *)(_ownedBuf + off);
+        } else {
+            _bg = allocRgb565(bgBytes);
+            if (!_bg) return false;
+            memcpy(_bg, data + off, bgBytes);
+        }
         off += bgBytes;
         for (uint8_t i = 0; i < _layerCount; i++) {
             if (off + 16 > len) {
@@ -77,12 +125,18 @@ public:
                 clear();
                 return false;
             }
-            L.data = (uint8_t *)allocBytes(L.dataSize);
-            if (!L.data) {
-                clear();
-                return false;
+            if (takeOwnership) {
+                L.data = _ownedBuf + off;
+                L.owned = false;
+            } else {
+                L.data = (uint8_t *)allocBytes(L.dataSize);
+                L.owned = true;
+                if (!L.data) {
+                    clear();
+                    return false;
+                }
+                memcpy(L.data, data + off, L.dataSize);
             }
-            memcpy(L.data, data + off, L.dataSize);
             off += L.dataSize;
         }
         _ready = true;
@@ -103,15 +157,20 @@ private:
     }
 
     void freeAll() {
-        if (_bg) {
+        if (_ownedBuf) {
+            heap_caps_free(_ownedBuf);
+            _ownedBuf = nullptr;
+            _bg = nullptr;
+        } else if (_bg) {
             heap_caps_free(_bg);
             _bg = nullptr;
         }
         for (uint8_t i = 0; i < _layerCount; i++) {
-            if (_layers[i].data) {
+            if (_layers[i].data && _layers[i].owned) {
                 heap_caps_free(_layers[i].data);
-                _layers[i].data = nullptr;
             }
+            _layers[i].data = nullptr;
+            _layers[i].owned = false;
         }
         _layerCount = 0;
         _w = 0;
@@ -123,6 +182,7 @@ private:
     uint16_t _h = 0;
     uint8_t _layerCount = 0;
     uint16_t *_bg = nullptr;
+    uint8_t *_ownedBuf = nullptr;
     Layer _layers[8];
 };
 

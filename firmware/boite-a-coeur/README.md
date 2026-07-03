@@ -1,6 +1,8 @@
 # Boîte à Cœur — firmware
 
-ESP32 firmware: Lucarne UI, touch, BLE WiFi provisioning, WiFi messages (BACM).
+ESP32 firmware: Lucarne UI, touch, BLE WiFi provisioning, cloud messaging (BACM), local HTTP messages (dev).
+
+**Current version:** 1.0.10 (`BacFirmware.h` / `factory/VERSION`).
 
 **Dependency:** [Lucarne](https://github.com/Pupariaa/Lucarne) Arduino library (install separately).
 

@@ -80,6 +80,8 @@ private:
             BacDebug::reply("debug verbose off");
         } else if (cmd == "debug") {
             BacDebug::reply(BacDebug::verbose ? "debug: on" : "debug: off");
+        } else if (cmd == "export config") {
+            exportConfig(app);
         } else if (cmd == "reload") {
             app.reloadUserConfig();
             BacDebug::reply("config reloaded");
@@ -96,7 +98,7 @@ private:
     }
 
     static void printHelp() {
-        BacDebug::reply("help info wifi ble mode uuid stats sys");
+        BacDebug::reply("help info export config wifi ble mode uuid stats sys");
         BacDebug::reply("wifi join SSID PASSWORD");
         BacDebug::reply("debug [on|off] reload reboot reset");
     }
@@ -117,6 +119,39 @@ private:
         Serial.print(F("[set, "));
         Serial.print(val.length());
         Serial.println(F(" chars]"));
+    }
+
+    static void exportConfigLine(const char *key, const String &val) {
+        Serial.print(key);
+        Serial.print(F(": "));
+        Serial.println(val);
+    }
+
+    static void exportConfig(BacApp &app) {
+        const BacUserConfig &c = app.userConfig();
+        exportConfigLine("device_name", c.deviceName);
+        exportConfigLine("factory_device_name", c.factoryDeviceName.length() ? c.factoryDeviceName : c.deviceName);
+        exportConfigLine("display_name", c.displayName.length() ? c.displayName : c.deviceName);
+        exportConfigLine("serial_number", c.serialNumber);
+        exportConfigLine("ssid", c.ssid);
+        exportConfigLine("psw", c.psw);
+        Serial.print(F("configured: "));
+        Serial.println(c.configured ? 1 : 0);
+        Serial.print(F("claimed: "));
+        Serial.println(c.claimed ? 1 : 0);
+        exportConfigLine("uuid", c.uuid);
+        exportConfigLine("locale", c.locale.length() ? c.locale : String("fr"));
+        exportConfigLine("build_year", c.buildYear);
+        exportConfigLine("build_semester", c.buildSemester);
+        exportConfigLine("hw_revision", c.hwRevision.length() ? c.hwRevision : String("BaC-S3-v1"));
+        exportConfigLine("api_url", c.apiUrl.length() ? c.apiUrl : String("https://boite-a-coeur.techalchemy.fr"));
+        exportConfigLine("api_secret", c.apiSecret);
+        exportConfigLine("region", c.region);
+        exportConfigLine("old_boot_status", c.oldBootStatus);
+        if (c.tzOffsetValid) {
+            Serial.print(F("tz_offset: "));
+            Serial.println(c.tzOffsetSec);
+        }
     }
 
     static void printInfo(BacApp &app) {

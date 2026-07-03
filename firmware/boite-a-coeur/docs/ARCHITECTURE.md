@@ -24,8 +24,9 @@ Boîte à Cœur is an ESP32 firmware sketch under `firmware/boite-a-coeur/`. It 
 | `BacScreenCache` | Boot and lazy asset warming for screens |
 | `BacTouch` | Median-filtered `touchRead()` on GPIO 1 |
 | `BacTimeSync` | NTP + timezone offset via ip-api.com |
-| `BacMessageStore` | Parse and hold BACM v1 payloads in RAM |
+| `BacMessageStore` | Parse and hold BACM v1 payloads in RAM (PSRAM) |
 | `BacMessageServer` | HTTP server on port 8080 (`/ping`, `/info`, `/message`) |
+| `BacCloudClient` | Cloud register, long-poll, ack/opened/seen, OTA commands |
 | `BacMessageRenderer` | Draw message layers over the display buffer |
 | `BacScreens` | Firmware-only screens (e.g. `message_opened`) |
 | `LoveboxFramePacer` | Target 45 FPS frame timing |
@@ -56,13 +57,21 @@ onCacheReady()
 
 ## Message path
 
+### Cloud (production)
+
+1. `BacCloudClient` long-polls the backend when WiFi is up.
+2. BACM payload is validated by `BacMessageStore` (PSRAM allocation).
+3. Device acks receipt; UI shows `new_message` then `message_opened` on tap.
+4. Opened/seen callbacks update server status; poll is held until the session ends.
+5. `BacMessageRenderer` composites layers on `message_opened`.
+
+### Local HTTP (dev)
+
 When WiFi is up and the device is idle:
 
 1. `BacMessageServer` listens on `0.0.0.0:8080`.
 2. `POST /message` receives a BACM binary (multipart or raw body).
-3. Payload is queued and parsed by `BacMessageStore`.
-4. UI navigates to `new_message`; user opens `message_opened`.
-5. `BacMessageRenderer` composites background + layers each frame in `drawMessageOverlay()`.
+3. Same UI flow as cloud (`new_message` → `message_opened` → `idle`).
 
 Messages received during setup or settings are stored but do not interrupt those flows.
 

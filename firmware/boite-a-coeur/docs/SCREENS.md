@@ -15,7 +15,7 @@ Screens come from Studio export (`Projet.h`) plus one firmware screen (`BacScree
 | `first_wifi_error` | WiFi failed during setup |
 | `lost_connection` | No WiFi; BLE provisioning |
 | `idle` | Home screen when connected |
-| `new_message` | Message notification |
+| `new_message` | Message notification (`Message éphémère` when ephemeral) |
 | `settings_menu` | Settings entry (long-press) |
 | `settings` | Settings submenu hub |
 | `settings_wifi` | WiFi settings |
@@ -44,7 +44,8 @@ Screens come from Studio export (`Projet.h`) plus one firmware screen (`BacScree
 | Boot, no WiFi | `lost_connection` |
 | WiFi OK after boot | `idle` |
 | Link lost | `lost_connection` |
-| Message received (idle) | `new_message` → tap → `message_opened` |
+| Message received (idle) | `new_message` → tap → `message_opened` → tap or 10 s → `idle` |
+| Active message session | Settings long-press disabled until seen |
 | Long-press on idle/lost | `settings_menu` |
 | Settings → Quitter | `idle` |
 | Factory reset complete | `first_p1` |

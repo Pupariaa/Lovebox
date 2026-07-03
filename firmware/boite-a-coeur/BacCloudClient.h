@@ -9,10 +9,12 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <freertos/queue.h>
+#include <esp_heap_caps.h>
 #include "BacUserConfig.h"
 #include "BacFirmware.h"
 #include "BacDebug.h"
 #include "BacTls.h"
+#include "BacMessageStore.h"
 
 class BacCloudClient {
 public:
@@ -20,7 +22,44 @@ public:
     static const uint32_t HTTP_TIMEOUT_MS = 32000;
     static const size_t MAX_MSG = 2097152;
 
-    typedef void (*MessageReceivedFn)(void *ctx, uint8_t *data, size_t len, uint32_t messageId);
+    class PollBodyStream : public Stream {
+    public:
+        void reset(uint8_t *buf, size_t cap) {
+            _buf = buf;
+            _cap = cap;
+            _len = 0;
+        }
+
+        size_t length() const { return _len; }
+
+        size_t write(uint8_t b) override {
+            if (!_buf || _len >= _cap) return 0;
+            _buf[_len++] = b;
+            return 1;
+        }
+
+        size_t write(const uint8_t *buffer, size_t size) override {
+            if (!_buf || !buffer || size == 0) return 0;
+            size_t n = size;
+            if (_len + n > _cap) n = _cap - _len;
+            if (n == 0) return 0;
+            memcpy(_buf + _len, buffer, n);
+            _len += n;
+            return n;
+        }
+
+        int available() override { return 0; }
+        int read() override { return -1; }
+        int peek() override { return -1; }
+        void flush() override {}
+
+    private:
+        uint8_t *_buf = nullptr;
+        size_t _cap = 0;
+        size_t _len = 0;
+    };
+
+    typedef void (*MessageReceivedFn)(void *ctx, uint8_t *data, size_t len, uint32_t messageId, uint32_t displayDurationSec);
     typedef void (*ConfigCommandFn)(void *ctx, const char *payloadJson);
     typedef void (*OtaOfferFn)(void *ctx, const char *payloadJson);
 
@@ -44,8 +83,9 @@ public:
         if (!_queue || !_handler) return;
         IncomingMsg msg;
         while (xQueueReceive(_queue, &msg, 0) == pdTRUE) {
-            if (msg.data && msg.len > 0) _handler(_handlerCtx, msg.data, msg.len, msg.messageId);
-            else if (msg.data) free(msg.data);
+            if (msg.data && msg.len > 0) {
+                _handler(_handlerCtx, msg.data, msg.len, msg.messageId, msg.displayDurationSec);
+            } else if (msg.data) heap_caps_free(msg.data);
         }
     }
 
@@ -69,6 +109,22 @@ public:
     void setOtaOfferHandler(OtaOfferFn fn, void *ctx) {
         _otaOfferHandler = fn;
         _otaOfferHandlerCtx = ctx;
+    }
+
+    void openedMessage(uint32_t messageId) {
+        if (!_config || !_config->apiSecret.length() || messageId == 0) return;
+        PendingMsgPost post = {messageId, MsgPostKind::Opened};
+        if (_msgPostQueue) xQueueSend(_msgPostQueue, &post, 0);
+    }
+
+    void seenMessage(uint32_t messageId) {
+        if (!_config || !_config->apiSecret.length() || messageId == 0) return;
+        PendingMsgPost post = {messageId, MsgPostKind::Seen};
+        if (_msgPostQueue) xQueueSend(_msgPostQueue, &post, 0);
+    }
+
+    void setMessageHold(bool hold) {
+        _messageHold = hold;
     }
 
     void setOtaHold(bool hold) {
@@ -191,6 +247,14 @@ private:
         uint8_t *data;
         size_t len;
         uint32_t messageId;
+        uint32_t displayDurationSec;
+    };
+
+    enum class MsgPostKind : uint8_t { Ack, Opened, Seen };
+
+    struct PendingMsgPost {
+        uint32_t messageId;
+        MsgPostKind kind;
     };
 
     struct PendingAck {
@@ -211,25 +275,50 @@ private:
     QueueHandle_t _queue = nullptr;
     QueueHandle_t _ackQueue = nullptr;
     QueueHandle_t _nackQueue = nullptr;
+    QueueHandle_t _msgPostQueue = nullptr;
     TaskHandle_t _task = nullptr;
     bool _taskStarted = false;
     volatile bool _registerPending = false;
     volatile bool _registeredOk = false;
     volatile bool _otaHold = false;
+    volatile bool _messageHold = false;
 
     static void taskEntry(void *arg) {
         static_cast<BacCloudClient *>(arg)->taskLoop();
     }
 
+    void drainMessagePosts() {
+        PendingAck ack;
+        while (_ackQueue && xQueueReceive(_ackQueue, &ack, 0) == pdTRUE) {
+            sendAck(ack.messageId);
+        }
+        PendingNack nack;
+        while (_nackQueue && xQueueReceive(_nackQueue, &nack, 0) == pdTRUE) {
+            sendNack(nack.messageId);
+        }
+        PendingMsgPost post;
+        while (_msgPostQueue && xQueueReceive(_msgPostQueue, &post, 0) == pdTRUE) {
+            if (post.kind == MsgPostKind::Ack) sendAck(post.messageId);
+            else if (post.kind == MsgPostKind::Opened) sendOpened(post.messageId);
+            else if (post.kind == MsgPostKind::Seen) sendSeen(post.messageId);
+        }
+    }
+
     void taskLoop() {
         _ackQueue = xQueueCreate(4, sizeof(PendingAck));
         _nackQueue = xQueueCreate(4, sizeof(PendingNack));
+        _msgPostQueue = xQueueCreate(8, sizeof(PendingMsgPost));
         for (;;) {
             if (!_config || WiFi.status() != WL_CONNECTED) {
                 vTaskDelay(pdMS_TO_TICKS(500));
                 continue;
             }
             if (_otaHold) {
+                vTaskDelay(pdMS_TO_TICKS(200));
+                continue;
+            }
+            drainMessagePosts();
+            if (_messageHold) {
                 vTaskDelay(pdMS_TO_TICKS(200));
                 continue;
             }
@@ -246,14 +335,6 @@ private:
                 _registerPending = true;
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
-            }
-            PendingAck ack;
-            while (_ackQueue && xQueueReceive(_ackQueue, &ack, 0) == pdTRUE) {
-                sendAck(ack.messageId);
-            }
-            PendingNack nack;
-            while (_nackQueue && xQueueReceive(_nackQueue, &nack, 0) == pdTRUE) {
-                sendNack(nack.messageId);
             }
             pollCommandsOnce();
             pollOnce();
@@ -349,6 +430,60 @@ private:
         http.end();
     }
 
+    static int resolvePollBodyLen(HTTPClient &http) {
+        int len = http.getSize();
+        if (len > 0) return len;
+        String bytesHdr = http.header("X-Message-Bytes");
+        if (bytesHdr.length()) {
+            len = bytesHdr.toInt();
+            if (len > 0) return len;
+        }
+        String clHdr = http.header("Content-Length");
+        if (clHdr.length()) {
+            len = clHdr.toInt();
+            if (len > 0) return len;
+        }
+        return -1;
+    }
+
+    static size_t readPollBody(HTTPClient &http, uint8_t **outBuf) {
+        if (!outBuf) return 0;
+        int expected = resolvePollBodyLen(http);
+        size_t cap = MAX_MSG;
+        if (expected > 0 && (size_t)expected < cap) cap = (size_t)expected;
+        uint8_t *buf = allocPollBuffer(cap);
+        if (!buf) return 0;
+        PollBodyStream sink;
+        sink.reset(buf, cap);
+        int written = http.writeToStream(&sink);
+        size_t readLen = sink.length();
+        if (written > 0 && (size_t)written > readLen) readLen = (size_t)written;
+        if (readLen == 0) {
+            heap_caps_free(buf);
+            return 0;
+        }
+        *outBuf = buf;
+        return readLen;
+    }
+
+    static size_t normalizeBacmBuffer(uint8_t *buf, size_t len) {
+        size_t off = BacMessageStore::findBacmOffset(buf, len);
+        if (off == SIZE_MAX) return 0;
+        if (off > 0) {
+            len -= off;
+            memmove(buf, buf + off, len);
+        }
+        size_t payloadSize = BacMessageStore::binaryPayloadSize(buf, len);
+        if (payloadSize == 0 || payloadSize > len) return 0;
+        return payloadSize;
+    }
+
+    static uint8_t *allocPollBuffer(size_t len) {
+        uint8_t *buf = (uint8_t *)heap_caps_malloc(len, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!buf) buf = (uint8_t *)heap_caps_malloc(len, MALLOC_CAP_8BIT);
+        return buf;
+    }
+
     void pollOnce() {
         String url = apiBase() + "/api/v1/devices/poll?timeout=" + String(POLL_TIMEOUT_SEC);
         WiFiClientSecure client;
@@ -356,6 +491,8 @@ private:
         HTTPClient http;
         http.setTimeout(HTTP_TIMEOUT_MS);
         if (!http.begin(client, url)) return;
+        const char *pollHeaders[] = {"X-Message-Id", "X-Message-Bytes", "Content-Length", "X-Display-Duration-Sec"};
+        http.collectHeaders(pollHeaders, 4);
         http.addHeader("X-Device-Uuid", _config->uuid);
         http.addHeader("X-Device-Secret", _config->apiSecret);
         int code = http.GET();
@@ -370,17 +507,31 @@ private:
         if (code == 200) {
             String msgIdHdr = http.header("X-Message-Id");
             uint32_t msgId = msgIdHdr.length() ? (uint32_t)msgIdHdr.toInt() : 0;
-            int len = http.getSize();
-            if (len > 0 && len <= (int)MAX_MSG) {
-                uint8_t *buf = (uint8_t *)malloc((size_t)len);
-                if (buf) {
-                    WiFiClient *stream = http.getStreamPtr();
-                    size_t read = stream->readBytes(buf, (size_t)len);
-                    if (read > 0) {
-                        IncomingMsg msg = {buf, read, msgId};
-                        if (xQueueSend(_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE) free(buf);
-                    } else free(buf);
-                }
+            if (!msgId) BAC_LOG("cloud", "poll missing X-Message-Id");
+            uint8_t *buf = nullptr;
+            size_t readLen = readPollBody(http, &buf);
+            if (readLen == 0 || !buf) {
+                BacDebug::eventf("cloud", "poll nack %u read empty", msgId);
+                if (msgId) sendNack(msgId);
+                http.end();
+                return;
+            }
+            size_t payloadSize = normalizeBacmBuffer(buf, readLen);
+            if (payloadSize == 0) {
+                BacDebug::eventf("cloud", "poll nack %u bad bacm %u b0=%02x%02x%02x%02x",
+                    msgId, (unsigned)readLen, buf[0], buf[1], buf[2], buf[3]);
+                if (msgId) sendNack(msgId);
+                heap_caps_free(buf);
+                http.end();
+                return;
+            }
+            String durHdr = http.header("X-Display-Duration-Sec");
+            uint32_t displaySec = durHdr.length() ? (uint32_t)durHdr.toInt() : 0;
+            IncomingMsg msg = {buf, payloadSize, msgId, displaySec};
+            if (xQueueSend(_queue, &msg, pdMS_TO_TICKS(100)) != pdTRUE) {
+                BacDebug::eventf("cloud", "poll nack %u queue full", msgId);
+                if (msgId) sendNack(msgId);
+                heap_caps_free(buf);
             }
         }
         http.end();
@@ -393,22 +544,39 @@ private:
         HTTPClient http;
         http.setTimeout(8000);
         if (!http.begin(client, url)) return;
+        http.addHeader("Content-Type", "application/json");
         http.addHeader("X-Device-Uuid", _config->uuid);
         http.addHeader("X-Device-Secret", _config->apiSecret);
-        http.POST((uint8_t *)nullptr, 0);
+        http.POST((uint8_t *)"{}", 2);
         http.end();
     }
 
     void sendAck(uint32_t messageId) {
-        String url = apiBase() + "/api/v1/devices/messages/" + String(messageId) + "/ack";
+        postDeviceMessage(messageId, "ack");
+    }
+
+    void sendOpened(uint32_t messageId) {
+        postDeviceMessage(messageId, "opened");
+    }
+
+    void sendSeen(uint32_t messageId) {
+        postDeviceMessage(messageId, "seen");
+    }
+
+    void postDeviceMessage(uint32_t messageId, const char *action) {
+        String url = apiBase() + "/api/v1/devices/messages/" + String(messageId) + "/" + action;
         WiFiClientSecure client;
         BacTls::configure(client);
         HTTPClient http;
         http.setTimeout(8000);
         if (!http.begin(client, url)) return;
+        http.addHeader("Content-Type", "application/json");
         http.addHeader("X-Device-Uuid", _config->uuid);
         http.addHeader("X-Device-Secret", _config->apiSecret);
-        http.POST((uint8_t *)nullptr, 0);
+        int code = http.POST((uint8_t *)"{}", 2);
+        if (code < 200 || code > 299) {
+            BacDebug::eventf("cloud", "%s %u failed http %d", action, messageId, code);
+        }
         http.end();
     }
 
@@ -434,6 +602,9 @@ public:
     void tickIdle() {}
     void ackMessage(uint32_t) {}
     void nackMessage(uint32_t) {}
+    void openedMessage(uint32_t) {}
+    void seenMessage(uint32_t) {}
+    void setMessageHold(bool) {}
     void setConfigCommandHandler(ConfigCommandFn, void *) {}
     void setOtaOfferHandler(OtaOfferFn, void *) {}
     void setOtaHold(bool) {}

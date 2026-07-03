@@ -31,6 +31,8 @@ struct BacLocale {
     static char welcome_l2[32];
     static char next[12];
     static char new_message[24];
+    static char new_message_ephemeral[28];
+    static char ephemeral_open[28];
     static char open_msg[12];
     static char dl_app[32];
     static char dl_app2[40];
@@ -118,6 +120,8 @@ struct BacLocale {
         copy(welcome_l2, sizeof(welcome_l2), pick(loc, "votre boite a coeur !", "your Lovebox!", "tu caja del corazon!", "a tua caixa do coracao!", "tua scatola del cuore!", "deiner Herzensbox!"));
         copy(next, sizeof(next), pick(loc, "Suivant", "Next", "Siguiente", "Seguinte", "Avanti", "Weiter"));
         copy(new_message, sizeof(new_message), pick(loc, "Nouveau message", "New message", "Nuevo mensaje", "Nova mensagem", "Nuovo messaggio", "Neue Nachricht"));
+        copy(new_message_ephemeral, sizeof(new_message_ephemeral), pick(loc, "Message \xC3\xA9ph\xC3\xA9m\xC3\xA8re", "Ephemeral message", "Mensaje ef\xC3\xADmero", "Mensagem ef\xC3\xA9mera", "Messaggio efimero", "Fl\xC3\xBCchtige Nachricht"));
+        copy(ephemeral_open, sizeof(ephemeral_open), pick(loc, "10 sec · Ouvrir", "10 sec · Open", "10 seg · Abrir", "10 seg · Abrir", "10 sec · Apri", "10 Sek · Offnen"));
         copy(open_msg, sizeof(open_msg), pick(loc, "Ouvrir", "Open", "Abrir", "Abrir", "Apri", "Offnen"));
         copy(dl_app, sizeof(dl_app), pick(loc, "Telechargez l'application", "Download the app", "Descarga la aplicacion", "Transfere a aplicacao", "Scarica l'app", "Lade die App herunter"));
         copy(dl_app2, sizeof(dl_app2), pick(loc, "pour configurer votre boite", "to set up your Lovebox", "para configurar tu caja", "para configurar a caixa", "per configurare la scatola", "um deine Box einzurichten"));
@@ -219,6 +223,8 @@ char BacLocale::welcome_l1[24] = "";
 char BacLocale::welcome_l2[32] = "";
 char BacLocale::next[12] = "";
 char BacLocale::new_message[24] = "";
+char BacLocale::new_message_ephemeral[28] = "";
+char BacLocale::ephemeral_open[28] = "";
 char BacLocale::open_msg[12] = "";
 char BacLocale::dl_app[32] = "";
 char BacLocale::dl_app2[40] = "";

@@ -31,8 +31,10 @@
 class BacApp {
 public:
     static const uint32_t WIFI_CONNECT_MIN_MS = 8000;
-    static const uint32_t WIFI_BOOT_TIMEOUT_MS = 20000;
+    static const uint32_t WIFI_BOOT_TIMEOUT_MS = 45000;
     static const uint32_t WIFI_CONNECT_BLE_EXTRA_MS = 30000;
+    static const uint32_t LOST_RETRY_FIRST_MS = 5000;
+    static const uint32_t LOST_RETRY_MS = 30000;
     static const uint32_t TOUCH_ARM_P1_MS = 3000;
     static const uint32_t TOUCH_ARM_NAV_MS = 500;
     static const uint32_t TOUCH_PRESS_MIN = 23500;
@@ -128,7 +130,7 @@ public:
             return;
         }
         _mode = Mode::WifiBoot;
-        startWifiAttempt(_config.ssid.c_str(), _config.psw.c_str(), false);
+        startWifiAttempt(_config.ssid.c_str(), _config.psw.c_str(), false, true);
         BAC_BOOT("wifi boot");
     }
 
@@ -144,13 +146,15 @@ public:
         pollWifi();
         pollWifiConnectingWatchdog();
         pollWifiLink();
+        pollLostReconnect();
         pollP4();
         pollClock();
         pollMenuActions();
         pollPendingMessage();
+        pollMessageSession();
         pollOtaPending();
         if (_httpStarted) _msgServer.tick();
-        if (_mode == Mode::Idle) _cloudClient.tickIdle();
+        _cloudClient.tickIdle();
         if (_touchEnabled) pollTouch(touchVal);
     }
 
@@ -296,8 +300,8 @@ private:
         static_cast<BacApp *>(arg)->otaTaskBody();
     }
 
-    static void cloudMessageThunk(void *ctx, uint8_t *data, size_t len, uint32_t messageId) {
-        static_cast<BacApp *>(ctx)->queueMessage(data, len, messageId);
+    static void cloudMessageThunk(void *ctx, uint8_t *data, size_t len, uint32_t messageId, uint32_t displayDurationSec) {
+        static_cast<BacApp *>(ctx)->queueMessage(data, len, messageId, displayDurationSec);
     }
 
     bool onCurrentScreen(const char *name) const {
@@ -306,50 +310,134 @@ private:
         return cur && cur->name() && strcmp(cur->name(), name) == 0;
     }
 
-    void queueMessage(uint8_t *data, size_t len, uint32_t cloudMessageId = 0) {
+    void queueMessage(uint8_t *data, size_t len, uint32_t cloudMessageId = 0, uint32_t displayDurationSec = 0) {
         if (!data || len == 0) return;
-        if (_pendingMsgBuf) heap_caps_free(_pendingMsgBuf);
+        if (cloudMessageId && cloudMessageId == _lastCompletedCloudMsgId) {
+            _cloudClient.seenMessage(cloudMessageId);
+            heap_caps_free(data);
+            return;
+        }
+        if (_msgSessionActive) {
+            if (cloudMessageId && cloudMessageId != _activeCloudMsgId) {
+                _cloudClient.nackMessage(cloudMessageId);
+            }
+            heap_caps_free(data);
+            return;
+        }
+        if (_pendingMsgBuf) {
+            if (_pendingCloudAckId) _cloudClient.nackMessage(_pendingCloudAckId);
+            heap_caps_free(_pendingMsgBuf);
+            _pendingMsgBuf = nullptr;
+            _pendingMsgLen = 0;
+            _pendingCloudAckId = 0;
+            _pendingDisplaySec = 0;
+            _pendingMsg = false;
+        }
         _pendingMsgBuf = data;
         _pendingMsgLen = len;
         _pendingCloudAckId = cloudMessageId;
+        _pendingDisplaySec = displayDurationSec;
         _pendingMsg = true;
     }
 
     void pollPendingMessage() {
         if (!_pendingMsg || !_pendingMsgBuf) return;
+        if (_msgSessionActive) return;
         _pendingMsg = false;
         uint8_t *buf = _pendingMsgBuf;
         size_t len = _pendingMsgLen;
+        uint32_t ackId = _pendingCloudAckId;
+        uint32_t displaySec = _pendingDisplaySec;
         _pendingMsgBuf = nullptr;
         _pendingMsgLen = 0;
-        if (!_msgStore.loadFromBinary(buf, len)) {
-            BAC_LOG("msg", "invalid");
-            heap_caps_free(buf);
-            if (_pendingCloudAckId) {
-                _cloudClient.nackMessage(_pendingCloudAckId);
-                _pendingCloudAckId = 0;
-            }
+        _pendingCloudAckId = 0;
+        _pendingDisplaySec = 0;
+        if (!_msgStore.loadFromBinary(buf, len, true)) {
+            BacDebug::eventf("msg", "invalid id=%u len=%u", ackId, (unsigned)len);
+            if (ackId) _cloudClient.nackMessage(ackId);
             return;
         }
-        heap_caps_free(buf);
-        if (_pendingCloudAckId) {
-            _cloudClient.ackMessage(_pendingCloudAckId);
-            _pendingCloudAckId = 0;
+        _activeCloudMsgId = ackId;
+        _activeDisplaySec = displaySec;
+        _msgSessionActive = true;
+        _ephemeralDismissAtMs = 0;
+        _cloudClient.setMessageHold(true);
+        if (ackId) {
+            _cloudClient.ackMessage(ackId);
+            BacDebug::eventf("msg", "received id=%u", ackId);
         }
         onMessageReceived();
     }
 
     void onMessageReceived() {
-        BAC_LOG("msg", "received");
-        if (_otaRunning || _otaPending) return;
-        if (_mode == Mode::Settings || _mode == Mode::FirstSetup || _mode == Mode::WifiBoot) return;
-        goInstant(&projet::screen_scr_mqxp1ppa3);
+        BacDebug::event("msg", "notify");
+        if (_otaRunning) return;
+        if (_mode == Mode::FirstSetup || _mode == Mode::WifiBoot) return;
+        if (onCurrentScreen("message_opened")) return;
+        if (onCurrentScreen("new_message") && _msgSessionActive) return;
+        showNewMessageScreen();
+    }
+
+    void showNewMessageScreen() {
+        if (!_msgStore.hasMessage()) return;
+        if (onCurrentScreen("message_opened")) return;
+        applyNewMessageScreenLabels();
+        go(&projet::screen_scr_mqxp1ppa3);
+        armTouch(TOUCH_ARM_NAV_MS, true);
+    }
+
+    void applyNewMessageScreenLabels() {
+        if (_activeDisplaySec > 0) {
+            projet::w17.setText(BacLocale::new_message_ephemeral);
+            projet::w19.setText(BacLocale::ephemeral_open);
+        } else {
+            projet::w17.setText(BacLocale::new_message);
+            projet::w19.setText(BacLocale::open_msg);
+        }
     }
 
     void openMessageView() {
         if (!_msgStore.hasMessage()) return;
+        if (_activeCloudMsgId) {
+            _cloudClient.openedMessage(_activeCloudMsgId);
+            BacDebug::eventf("msg", "opened id=%u", _activeCloudMsgId);
+        }
         _msgRenderer.resetAnim();
         goInstant(&bac::screen_message_opened);
+        if (_activeDisplaySec > 0) {
+            _ephemeralDismissAtMs = millis() + (uint32_t)_activeDisplaySec * 1000U;
+        } else {
+            _ephemeralDismissAtMs = 0;
+        }
+    }
+
+    void finishMessageSession() {
+        if (_activeCloudMsgId) {
+            _lastCompletedCloudMsgId = _activeCloudMsgId;
+            _cloudClient.seenMessage(_activeCloudMsgId);
+            BacDebug::eventf("msg", "seen id=%u", _activeCloudMsgId);
+        }
+        _activeCloudMsgId = 0;
+        _activeDisplaySec = 0;
+        _ephemeralDismissAtMs = 0;
+        _msgSessionActive = false;
+        _msgStore.clear();
+        _cloudClient.setMessageHold(false);
+        if (_mode == Mode::Idle || _mode == Mode::Lost) {
+            _mode = Mode::Idle;
+            _touchEnabled = true;
+            go(&projet::screen_scr_mqzyaiw41j);
+            updateClockLabels(true);
+        }
+    }
+
+    void pollMessageSession() {
+        if (!_msgSessionActive) return;
+        if (_activeDisplaySec == 0) return;
+        if (!onCurrentScreen("message_opened")) return;
+        if (_ephemeralDismissAtMs == 0) return;
+        if (millis() < _ephemeralDismissAtMs) return;
+        finishMessageSession();
     }
 
     void startMessageServer() {
@@ -366,7 +454,7 @@ private:
     }
 
     bool settingsLongPressAllowed() const {
-        return _mode == Mode::Idle || _mode == Mode::Lost;
+        return (_mode == Mode::Idle || _mode == Mode::Lost) && !_msgSessionActive;
     }
 
     bool settingsTouchAllowed() const {
@@ -767,7 +855,7 @@ private:
         }
     }
 
-    void startWifiAttempt(const char *ssid, const char *pass, bool firstSetupMinDelay) {
+    void startWifiAttempt(const char *ssid, const char *pass, bool firstSetupMinDelay, bool skipChannelScan = false) {
         strncpy(_connectSsid, ssid ? ssid : "", PROV_SSID_MAX);
         _connectSsid[PROV_SSID_MAX] = 0;
         strncpy(_connectPass, pass ? pass : "", PROV_PASS_MAX);
@@ -779,8 +867,22 @@ private:
         _ble.setProvisionStatus(BacBle::PROV_CONNECTING);
         if (_ble.isAppConnected()) vTaskDelay(pdMS_TO_TICKS(1200));
         else vTaskDelay(pdMS_TO_TICKS(500));
-        _wifi.startConnect(_connectSsid, _connectPass, _ble.isAppConnected());
+        _wifi.startConnect(_connectSsid, _connectPass, _ble.isAppConnected(), skipChannelScan);
         BAC_LOGF("wifi", "connecting ssid=%s ble=%d", _connectSsid, _ble.isAppConnected() ? 1 : 0);
+    }
+
+    void pollLostReconnect() {
+        if (_mode != Mode::Lost) return;
+        if (!_config.wifiConfigured()) return;
+        if (_wifiAttemptActive || _provPending) return;
+        if (_ble.isAppConnected()) return;
+        uint32_t now = millis();
+        if (_lostRetryAtMs == 0) _lostRetryAtMs = now + LOST_RETRY_FIRST_MS;
+        if (now < _lostRetryAtMs) return;
+        _lostRetryAtMs = now + LOST_RETRY_MS;
+        BAC_LOG("wifi", "lost retry");
+        closeBleProvisioning(false);
+        startWifiAttempt(_config.ssid.c_str(), _config.psw.c_str(), false, true);
     }
 
     void pollWifiConnectingWatchdog() {
@@ -884,6 +986,7 @@ private:
             _config.save();
         }
         _mode = Mode::Idle;
+        _lostRetryAtMs = 0;
         _wasTouchPressed = false;
         _touchEnabled = true;
         closeBleProvisioning(false);
@@ -896,6 +999,7 @@ private:
     void enterLost() {
         _mode = Mode::Lost;
         _touchEnabled = true;
+        _lostRetryAtMs = 0;
         stopMessageServer();
         _wifi.markStationDown();
         go(&projet::screen_scr_mqwqhtj72);
@@ -1032,7 +1136,9 @@ private:
             if (!pressed && _wasTouchPressed) {
                 uint32_t dur = now - _touchPressStartMs;
                 if (dur < TAP_MAX_MS) {
-                    enterIdle();
+                    finishMessageSession();
+                    _wasTouchPressed = pressed;
+                    return;
                 }
             }
         }
@@ -1126,6 +1232,9 @@ private:
         projet::w14.setText(BacLocale::next);
         projet::w17.setText(BacLocale::new_message);
         projet::w19.setText(BacLocale::open_msg);
+        if (_msgSessionActive && onCurrentScreen("new_message")) {
+            applyNewMessageScreenLabels();
+        }
         projet::w21.setText(BacLocale::dl_app);
         projet::w22.setText(BacLocale::dl_app2);
         projet::w24.setText(BacLocale::next);
@@ -1246,6 +1355,12 @@ private:
     bool _httpStarted = false;
     bool _pendingMsg = false;
     uint32_t _pendingCloudAckId = 0;
+    uint32_t _pendingDisplaySec = 0;
+    uint32_t _activeCloudMsgId = 0;
+    uint32_t _lastCompletedCloudMsgId = 0;
+    uint32_t _activeDisplaySec = 0;
+    uint32_t _ephemeralDismissAtMs = 0;
+    bool _msgSessionActive = false;
     uint8_t *_pendingMsgBuf = nullptr;
     size_t _pendingMsgLen = 0;
     bool _wasTouchPressed = false;
@@ -1255,6 +1370,7 @@ private:
     uint32_t _touchPressStartMs = 0;
     uint32_t _wifiConnectStartedMs = 0;
     uint32_t _wifiScreenStartedMs = 0;
+    uint32_t _lostRetryAtMs = 0;
     uint32_t _lastClockUpdateMs = 0;
     uint32_t _p4ShownMs = 0;
     uint32_t _flowStartedMs = 0;
