@@ -1,11 +1,14 @@
 # Lovebox
 
-Boîte à Cœur — connected gift box (ESP32 firmware, Android app, hardware research).
+Boîte à Cœur — connected gift box (ESP32 firmware, cloud API, mobile apps, factory tooling).
 
 | Area | Path |
 | --- | --- |
 | **ESP32 firmware** | [`firmware/boite-a-coeur/`](firmware/boite-a-coeur/) |
-| **Android app** | [`applications/android/v.0.1.0/`](applications/android/v.0.1.0/) |
+| **Cloud API + browser sim** | [`web/backend/`](web/backend/) |
+| **Mobile app (Expo)** | [`applications/mobile-rn/`](applications/mobile-rn/) |
+| **Factory provisioning** | [`factory/`](factory/) |
+| **Legacy Android scaffold** | [`applications/android/v.0.1.0/`](applications/android/v.0.1.0/) |
 | **Hardware research** | [`docs/research/`](docs/research/) |
 
 ## UI library
@@ -20,9 +23,22 @@ Documents/GitHub/
 
 Studio project: `firmware/boite-a-coeur/Lovebox.lucarne.json`
 
-## Firmware quick start
+## Quick start
 
-See [firmware/boite-a-coeur/README.md](firmware/boite-a-coeur/README.md).
+| Task | Doc |
+| --- | --- |
+| Flash / develop firmware | [firmware/boite-a-coeur/README.md](firmware/boite-a-coeur/README.md) |
+| Provision a device | [factory/README.md](factory/README.md) |
+| Run the API locally | [web/backend/README.md](web/backend/README.md) |
+| Run the mobile app | [applications/mobile-rn/README.md](applications/mobile-rn/README.md) |
+
+Current production firmware: **1.0.10** (`factory/VERSION`).
+
+## Messaging (summary)
+
+Users send BACM v1 binaries from the mobile app or browser sim. The backend queues messages per device; the ESP32 long-polls, shows `new_message`, then `message_opened` on tap. Receipts: **received** (device ack), **opened** (user tap), **seen** (dismiss). Ephemeral messages auto-dismiss after 10 seconds and are omitted from sent history.
+
+Details: [firmware/boite-a-coeur/docs/MESSAGES.md](firmware/boite-a-coeur/docs/MESSAGES.md).
 
 ## Research
 
