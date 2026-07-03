@@ -12,6 +12,33 @@ final class MessageRepository
     {
     }
 
+    public function retargetQueued(int $fromDeviceId, int $toDeviceId): int
+    {
+        if ($fromDeviceId === $toDeviceId) {
+            return 0;
+        }
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET target_device_id = :to
+             WHERE target_device_id = :from AND status IN ('queued', 'delivering')"
+        );
+        $stmt->execute(['to' => $toDeviceId, 'from' => $fromDeviceId]);
+        return $stmt->rowCount();
+    }
+
+    public function retargetQueuedForOwner(int $ownerUserId, int $toDeviceId): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages m
+             JOIN devices d ON d.id = m.target_device_id
+             SET m.target_device_id = :to
+             WHERE d.owner_user_id = :owner
+               AND m.target_device_id <> :to
+               AND m.status IN ('queued', 'delivering')"
+        );
+        $stmt->execute(['to' => $toDeviceId, 'owner' => $ownerUserId]);
+        return $stmt->rowCount();
+    }
+
     public function create(
         int $senderUserId,
         int $targetDeviceId,
@@ -40,17 +67,19 @@ final class MessageRepository
             $deviceStmt->execute(['id' => $targetDeviceId]);
             $deviceName = (string) ($deviceStmt->fetchColumn() ?: '');
 
-            $logStmt = $this->pdo->prepare(
-                'INSERT INTO sent_message_log (message_id, sender_user_id, target_device_id, target_device_name, preview_base64)
-                 VALUES (:mid, :sender, :target, :name, :preview)'
-            );
-            $logStmt->execute([
-                'mid' => $messageId,
-                'sender' => $senderUserId,
-                'target' => $targetDeviceId,
-                'name' => $deviceName,
-                'preview' => $previewBase64,
-            ]);
+            if ($displayDurationSec === null) {
+                $logStmt = $this->pdo->prepare(
+                    'INSERT INTO sent_message_log (message_id, sender_user_id, target_device_id, target_device_name, preview_base64)
+                     VALUES (:mid, :sender, :target, :name, :preview)'
+                );
+                $logStmt->execute([
+                    'mid' => $messageId,
+                    'sender' => $senderUserId,
+                    'target' => $targetDeviceId,
+                    'name' => $deviceName,
+                    'preview' => $previewBase64,
+                ]);
+            }
 
             $this->pdo->commit();
             return $messageId;
@@ -60,7 +89,19 @@ final class MessageRepository
         }
     }
 
-    public function requeueStaleDelivering(int $olderThanSeconds = 120): int
+    public function requeueStaleActiveForDevice(int $deviceId, int $olderThanSeconds = 600): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'queued', delivered_at = NULL, acked_at = NULL, opened_at = NULL
+             WHERE target_device_id = :did
+               AND status IN ('delivering', 'received', 'opened')
+               AND COALESCE(opened_at, acked_at, delivered_at) < DATE_SUB(NOW(), INTERVAL :sec SECOND)"
+        );
+        $stmt->execute(['did' => $deviceId, 'sec' => $olderThanSeconds]);
+        return $stmt->rowCount();
+    }
+
+    public function requeueStaleDelivering(int $olderThanSeconds = 30): int
     {
         $stmt = $this->pdo->prepare(
             "UPDATE messages SET status = 'queued', delivered_at = NULL
@@ -72,20 +113,39 @@ final class MessageRepository
         return $stmt->rowCount();
     }
 
+    public function requeueStaleDeliveringForDevice(int $deviceId, int $olderThanSeconds = 15): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'queued', delivered_at = NULL
+             WHERE target_device_id = :did AND status = 'delivering'
+               AND delivered_at IS NOT NULL
+               AND delivered_at < DATE_SUB(NOW(), INTERVAL :sec SECOND)"
+        );
+        $stmt->execute(['did' => $deviceId, 'sec' => $olderThanSeconds]);
+        return $stmt->rowCount();
+    }
+
     public function claimNextQueued(int $deviceId): ?array
     {
         $this->requeueStaleDelivering();
+        $this->requeueStaleDeliveringForDevice($deviceId, 120);
+        $this->requeueStaleActiveForDevice($deviceId, 600);
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
                 "SELECT id, bacm_data, display_duration_sec FROM messages
                  WHERE target_device_id = :did AND status = 'queued'
                    AND (scheduled_at IS NULL OR scheduled_at <= NOW())
+                   AND NOT EXISTS (
+                     SELECT 1 FROM messages block
+                     WHERE block.target_device_id = :did2
+                       AND block.status IN ('delivering', 'received', 'opened')
+                   )
                  ORDER BY created_at ASC
                  LIMIT 1
                  FOR UPDATE SKIP LOCKED"
             );
-            $stmt->execute(['did' => $deviceId]);
+            $stmt->execute(['did' => $deviceId, 'did2' => $deviceId]);
             $row = $stmt->fetch();
             if (!$row) {
                 $this->pdo->commit();
@@ -109,8 +169,28 @@ final class MessageRepository
     public function ack(int $messageId, int $deviceId): bool
     {
         $stmt = $this->pdo->prepare(
-            "UPDATE messages SET status = 'acked', acked_at = NOW()
-             WHERE id = :id AND target_device_id = :did AND status IN ('delivering', 'delivered')"
+            "UPDATE messages SET status = 'received', acked_at = NOW(), delivered_at = COALESCE(delivered_at, NOW())
+             WHERE id = :id AND target_device_id = :did AND status IN ('delivering', 'queued')"
+        );
+        $stmt->execute(['id' => $messageId, 'did' => $deviceId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function opened(int $messageId, int $deviceId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'opened', opened_at = NOW()
+             WHERE id = :id AND target_device_id = :did AND status = 'received'"
+        );
+        $stmt->execute(['id' => $messageId, 'did' => $deviceId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function seen(int $messageId, int $deviceId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'seen', seen_at = NOW()
+             WHERE id = :id AND target_device_id = :did AND status IN ('received', 'opened')"
         );
         $stmt->execute(['id' => $messageId, 'did' => $deviceId]);
         return $stmt->rowCount() > 0;
@@ -129,10 +209,12 @@ final class MessageRepository
     public function listSent(int $userId, int $limit, int $offset): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT id, message_id, target_device_id, target_device_name, preview_base64, created_at
-             FROM sent_message_log
-             WHERE sender_user_id = :uid
-             ORDER BY created_at DESC
+            'SELECT l.id, l.message_id, l.target_device_id, l.target_device_name, l.preview_base64, l.created_at,
+                    m.status, m.acked_at, m.opened_at, m.seen_at, m.display_duration_sec
+             FROM sent_message_log l
+             JOIN messages m ON m.id = l.message_id
+             WHERE l.sender_user_id = :uid
+             ORDER BY l.created_at DESC
              LIMIT :lim OFFSET :off'
         );
         $stmt->bindValue('uid', $userId, PDO::PARAM_INT);

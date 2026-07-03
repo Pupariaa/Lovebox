@@ -76,7 +76,7 @@ body {
   color: var(--muted);
 }
 
-input, textarea {
+input, textarea, select {
   background: #120c10;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -85,7 +85,7 @@ input, textarea {
   font: inherit;
 }
 
-input:focus, textarea:focus {
+input:focus, textarea:focus, select:focus {
   outline: 2px solid var(--rose-dim);
   border-color: var(--rose);
 }
@@ -138,6 +138,11 @@ input:focus, textarea:focus {
   border: 1px solid var(--border);
 }
 
+.btn-small {
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
 .row {
   display: flex;
   gap: 8px;
@@ -147,6 +152,13 @@ input:focus, textarea:focus {
 
 .row.between {
   justify-content: space-between;
+}
+
+.inline-title {
+  margin: 16px 0 8px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  flex: 1;
 }
 
 .cards {
@@ -193,14 +205,64 @@ input:focus, textarea:focus {
 
 .mono {
   font-family: ui-monospace, monospace;
-  font-size: 0.75rem;
+  font-size: 1.1rem;
+  letter-spacing: 0.06em;
   word-break: break-all;
   background: #120c10;
   padding: 8px;
   border-radius: 8px;
   margin-top: 8px;
+  color: var(--rose);
 }
 
 .hidden { display: none !important; }
 
 .ok { color: var(--ok); }
+
+.contacts-list {
+  margin-top: 12px;
+}
+
+.contact-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.contact-row:last-child {
+  border-bottom: none;
+}
+
+.sent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.sent-item {
+  background: #120c10;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.sent-preview {
+  display: block;
+  width: 100%;
+  max-width: 280px;
+  height: auto;
+  border-radius: 4px;
+  image-rendering: pixelated;
+}
+
+.sent-meta {
+  margin-top: 4px;
+  font-size: 0.75rem;
+  color: var(--muted);
+}

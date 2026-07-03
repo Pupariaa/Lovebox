@@ -28,4 +28,15 @@ final class EmailService
         $body = "Open this link to confirm your email:\n\n$link\n";
         @mail($email, $subject, $body, 'From: ' . $this->from);
     }
+
+    public function sendPasswordReset(string $email, string $token): void
+    {
+        if (!$this->enabled) {
+            return;
+        }
+        $link = rtrim($this->appUrl, '/') . '/api/v1/auth/reset-password?token=' . urlencode($token);
+        $subject = 'Boite a Coeur - Reinitialisation du mot de passe';
+        $body = "Bonjour,\n\nPour choisir un nouveau mot de passe, ouvrez ce lien (valable 1 heure) :\n\n$link\n\nSi vous n'etes pas a l'origine de cette demande, ignorez cet e-mail.\n";
+        @mail($email, $subject, $body, 'From: ' . $this->from);
+    }
 }

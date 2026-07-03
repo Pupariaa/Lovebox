@@ -6,15 +6,6 @@ const Bacm = (() => {
     return (((r & 0xf8) << 8) | ((g & 0xfc) << 3) | (b >> 3)) & 0xffff;
   }
 
-  function hexTo565(hex) {
-    const h = hex.replace("#", "");
-    return rgb888To565(
-      parseInt(h.substring(0, 2), 16),
-      parseInt(h.substring(2, 4), 16),
-      parseInt(h.substring(4, 6), 16),
-    );
-  }
-
   function canvasTo565(canvas) {
     const ctx = canvas.getContext("2d");
     const img = ctx.getImageData(0, 0, canvas.width, canvas.height);
@@ -40,8 +31,7 @@ const Bacm = (() => {
     view.setUint16(8, MSG_H, true);
     view.setUint8(10, 0);
     view.setUint8(11, 0);
-    const bgBytes = new Uint8Array(bg565.buffer);
-    bytes.set(bgBytes, 12);
+    bytes.set(new Uint8Array(bg565.buffer), 12);
     return buf;
   }
 
@@ -64,8 +54,7 @@ const Bacm = (() => {
     lines.forEach((line, i) => {
       ctx.fillText(line, MSG_W / 2, startY + i * lh);
     });
-    const bg565 = canvasTo565(canvas);
-    return packMessage(bg565);
+    return packMessage(canvasTo565(canvas));
   }
 
   return { packSimpleText, MSG_W, MSG_H };

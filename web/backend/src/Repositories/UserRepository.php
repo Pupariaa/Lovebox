@@ -51,6 +51,40 @@ final class UserRepository
         return $stmt->rowCount() > 0;
     }
 
+    public function setPasswordResetToken(int $userId, string $token, string $expiresAt): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET password_reset_token = :token, password_reset_expires_at = :exp WHERE id = :id'
+        );
+        $stmt->execute(['token' => $token, 'exp' => $expiresAt, 'id' => $userId]);
+    }
+
+    public function findByPasswordResetToken(string $token): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT * FROM users WHERE password_reset_token = :token AND password_reset_expires_at > NOW() LIMIT 1'
+        );
+        $stmt->execute(['token' => $token]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public function updatePassword(int $userId, string $passwordHash): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET password_hash = :hash, password_reset_token = NULL, password_reset_expires_at = NULL WHERE id = :id'
+        );
+        $stmt->execute(['hash' => $passwordHash, 'id' => $userId]);
+    }
+
+    public function revokeAllRefreshTokens(int $userId): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE refresh_tokens SET revoked_at = NOW() WHERE user_id = :id AND revoked_at IS NULL'
+        );
+        $stmt->execute(['id' => $userId]);
+    }
+
     public function storeRefreshToken(int $userId, string $tokenHash, string $expiresAt): void
     {
         $stmt = $this->pdo->prepare(

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Bac\Services;
 
+use Bac\Repositories\DeviceRepository;
 use Bac\Repositories\MessageRepository;
 use Bac\Repositories\PairingRepository;
 
@@ -14,6 +15,7 @@ final class MessageService
     public function __construct(
         private MessageRepository $messages,
         private PairingRepository $pairings,
+        private DeviceRepository $devices,
         private BacmValidator $bacm
     ) {
         $settings = require dirname(__DIR__, 2) . '/config/settings.php';
@@ -27,7 +29,11 @@ final class MessageService
         ?string $scheduledAt = null,
         ?int $displayDurationSec = null
     ): array {
-        if (!$this->pairings->findActiveBySenderAndTarget($userId, $targetDeviceId)) {
+        $deliveryDeviceId = $this->devices->resolveDeliveryDeviceId($targetDeviceId);
+        $pairing = $this->pairings->findActiveBySenderAndTarget($userId, $targetDeviceId)
+            ?? $this->pairings->findActiveBySenderAndTarget($userId, $deliveryDeviceId)
+            ?? $this->pairings->findActiveBySenderAndPartnerOwner($userId, $targetDeviceId);
+        if (!$pairing) {
             throw new \InvalidArgumentException('no active pairing to this device');
         }
         $err = $this->bacm->validate($bacmData);
@@ -37,13 +43,21 @@ final class MessageService
         $preview = $this->bacm->extractPreviewBase64($bacmData);
         $messageId = $this->messages->create(
             $userId,
-            $targetDeviceId,
+            $deliveryDeviceId,
             $bacmData,
             $preview,
             $scheduledAt,
             $displayDurationSec
         );
         return ['ok' => true, 'message_id' => $messageId];
+    }
+
+    public function consolidateDeliveryForDevice(int $deviceId, ?int $ownerUserId): void
+    {
+        if (!$ownerUserId) {
+            return;
+        }
+        $this->messages->retargetQueuedForOwner($ownerUserId, $deviceId);
     }
 
     public function longPoll(int $deviceId, int $timeoutSeconds): ?array
@@ -65,6 +79,16 @@ final class MessageService
         return $this->messages->ack($messageId, $deviceId);
     }
 
+    public function opened(int $deviceId, int $messageId): bool
+    {
+        return $this->messages->opened($messageId, $deviceId);
+    }
+
+    public function seen(int $deviceId, int $messageId): bool
+    {
+        return $this->messages->seen($messageId, $deviceId);
+    }
+
     public function nack(int $deviceId, int $messageId): bool
     {
         return $this->messages->nack($messageId, $deviceId);
@@ -80,6 +104,11 @@ final class MessageService
             'target_device_name' => $r['target_device_name'],
             'preview_base64' => $r['preview_base64'],
             'created_at' => $r['created_at'],
+            'status' => (string) ($r['status'] ?? 'queued'),
+            'received_at' => $r['acked_at'] ?? null,
+            'opened_at' => $r['opened_at'] ?? null,
+            'seen_at' => $r['seen_at'] ?? null,
+            'ephemeral' => !empty($r['display_duration_sec']),
         ], $rows);
     }
 

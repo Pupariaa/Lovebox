@@ -22,10 +22,17 @@ final class MessageController
         $targetId = (int) ($params['target_device_id'] ?? 0);
         $body = $request->getBody()->getContents();
         $parsed = (array) $request->getParsedBody();
-        $scheduledAt = isset($parsed['scheduled_at']) ? (string) $parsed['scheduled_at'] : null;
-        $displayDuration = isset($parsed['display_duration_sec'])
-            ? (int) $parsed['display_duration_sec']
-            : null;
+        $scheduledAt = isset($params['scheduled_at'])
+            ? (string) $params['scheduled_at']
+            : (isset($parsed['scheduled_at']) ? (string) $parsed['scheduled_at'] : null);
+        $ephemeral = ($params['ephemeral'] ?? '0') === '1';
+        if ($ephemeral) {
+            $displayDuration = 10;
+        } else {
+            $displayDuration = isset($parsed['display_duration_sec'])
+                ? (int) $parsed['display_duration_sec']
+                : null;
+        }
         try {
             $data = $this->messages->send($userId, $targetId, $body, $scheduledAt, $displayDuration);
             return JsonResponse::ok($response, $data);

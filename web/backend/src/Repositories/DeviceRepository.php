@@ -34,10 +34,24 @@ final class DeviceRepository
         return $rows[0] ?? null;
     }
 
+    public function resolveDeliveryDeviceId(int $targetDeviceId): int
+    {
+        $device = $this->findById($targetDeviceId);
+        if (!$device || $device['owner_user_id'] === null) {
+            return $targetDeviceId;
+        }
+        $primary = $this->findByOwner((int) $device['owner_user_id']);
+        if (!$primary) {
+            return $targetDeviceId;
+        }
+        return (int) $primary['id'];
+    }
+
     public function listByOwner(int $userId): array
     {
         $stmt = $this->pdo->prepare(
-            'SELECT * FROM devices WHERE owner_user_id = :uid ORDER BY id ASC'
+            'SELECT * FROM devices WHERE owner_user_id = :uid
+             ORDER BY last_seen_at IS NULL, last_seen_at DESC, id DESC'
         );
         $stmt->execute(['uid' => $userId]);
         return $stmt->fetchAll();

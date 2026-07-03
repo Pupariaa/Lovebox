@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Bac\Services;
 
 use Bac\Repositories\DeviceRepository;
+use Bac\Repositories\MessageRepository;
 use Bac\Repositories\PairingRepository;
 use PDO;
 
@@ -16,6 +17,7 @@ final class PairingService
     public function __construct(
         private PairingRepository $pairings,
         private DeviceRepository $devices,
+        private MessageRepository $messages,
         private PDO $pdo
     ) {
     }
@@ -30,11 +32,11 @@ final class PairingService
         }
         $this->pairings->invalidateCodesForUser($userId);
         $code = $this->randomCode();
-        $expiresAt = date('Y-m-d H:i:s', time() + self::CODE_TTL_SEC);
-        $this->pairings->createPairingCode($code, $userId, (int) $owned['id'], $expiresAt);
+        $this->pairings->createPairingCode($code, $userId, (int) $owned['id'], self::CODE_TTL_SEC);
+        $entry = $this->pairings->findValidCode($code);
         return [
             'code' => $code,
-            'expires_at' => $expiresAt,
+            'expires_at' => $entry['expires_at'] ?? null,
             'device_id' => (int) $owned['id'],
         ];
     }
@@ -90,8 +92,9 @@ final class PairingService
 
     public function getState(int $userId): array
     {
+        $this->repairStalePairingTargets($userId);
         $ownedList = $this->devices->listByOwner($userId);
-        $owned = $ownedList[0] ?? null;
+        $owned = $this->devices->findByOwner($userId);
         if ($owned) {
             $this->repairReciprocalPairings($userId, (int) $owned['id']);
         }
@@ -120,6 +123,22 @@ final class PairingService
     public function hasActivePairingTo(int $userId, int $targetDeviceId): bool
     {
         return $this->pairings->findActiveBySenderAndTarget($userId, $targetDeviceId) !== null;
+    }
+
+    private function repairStalePairingTargets(int $userId): void
+    {
+        $active = $this->pairings->listActiveBySender($userId);
+        $seen = [];
+        foreach ($active as $row) {
+            $targetId = (int) $row['target_device_id'];
+            $deliveryId = $this->devices->resolveDeliveryDeviceId($targetId);
+            if ($deliveryId === $targetId || isset($seen[$targetId])) {
+                continue;
+            }
+            $seen[$targetId] = true;
+            $this->pairings->retargetAllActivePairings($targetId, $deliveryId);
+            $this->messages->retargetQueued($targetId, $deliveryId);
+        }
     }
 
     private function repairReciprocalPairings(int $userId, int $ownedDeviceId): void
@@ -174,13 +193,10 @@ final class PairingService
     private function normalizeCode(string $raw): string
     {
         $raw = strtoupper(trim($raw));
-        $raw = str_replace(' ', '', $raw);
-        if (str_starts_with($raw, 'LOVE')) {
-            return $raw;
+        $raw = preg_replace('/\s+/', '', $raw) ?? '';
+        if (preg_match('/^LOVE[-]?([A-HJ-NP-Z2-9]{4})$/', $raw, $m)) {
+            return 'LOVE-' . $m[1];
         }
-        if (strlen($raw) === 4) {
-            return 'LOVE-' . $raw;
-        }
-        return $raw;
+        return '';
     }
 }

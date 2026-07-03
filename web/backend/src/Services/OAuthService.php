@@ -18,11 +18,16 @@ final class OAuthService
         $this->settings = require dirname(__DIR__, 2) . '/config/settings.php';
     }
 
-    public function startUrl(string $provider): string
+    public function startUrl(string $provider, array $query = []): string
     {
         $provider = strtolower($provider);
         $cfg = $this->providerConfig($provider);
         $state = TokenUtil::randomHex(16);
+        $nativeRedirect = self::sanitizeNativeRedirect((string) ($query['redirect_uri'] ?? ''));
+        if (($query['app'] ?? '') === 'native' && $nativeRedirect !== null) {
+            $encoded = rtrim(strtr(base64_encode($nativeRedirect), '+/', '-_'), '=');
+            $state .= '.' . $encoded;
+        }
         $params = [
             'client_id' => $cfg['client_id'],
             'redirect_uri' => $cfg['redirect_uri'],
@@ -31,6 +36,29 @@ final class OAuthService
             'state' => $state,
         ];
         return $cfg['auth_url'] . '?' . http_build_query($params);
+    }
+
+    public static function decodeNativeRedirect(string $state): ?string
+    {
+        $dot = strpos($state, '.');
+        if ($dot === false) {
+            return null;
+        }
+        $encoded = substr($state, $dot + 1);
+        $decoded = base64_decode(strtr($encoded, '-_', '+/'), true);
+        if ($decoded === false) {
+            return null;
+        }
+        return self::sanitizeNativeRedirect($decoded);
+    }
+
+    private static function sanitizeNativeRedirect(string $redirect): ?string
+    {
+        $redirect = trim($redirect);
+        if ($redirect === '') {
+            return null;
+        }
+        return str_starts_with($redirect, 'boiteacoeur://') ? $redirect : null;
     }
 
     public function handleCallback(string $provider, array $params): array

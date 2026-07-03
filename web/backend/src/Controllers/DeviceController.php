@@ -51,15 +51,24 @@ final class DeviceController
         $params = $request->getQueryParams();
         $timeout = (int) ($params['timeout'] ?? 25);
         $this->deviceRepo->touchHeartbeat((int) $device['id']);
+        $ownerUserId = isset($device['owner_user_id']) ? (int) $device['owner_user_id'] : null;
+        if ($ownerUserId) {
+            $this->messages->consolidateDeliveryForDevice((int) $device['id'], $ownerUserId);
+        }
         $msg = $this->messages->longPoll((int) $device['id'], $timeout);
         if (!$msg) {
             return $response->withStatus(204);
         }
-        $response->getBody()->write((string) $msg['bacm_data']);
+        $body = (string) $msg['bacm_data'];
+        $response->getBody()->write($body);
+        $bodyLen = strlen($body);
         return $response
             ->withHeader('Content-Type', 'application/octet-stream')
+            ->withHeader('Content-Length', (string) $bodyLen)
+            ->withHeader('X-Message-Bytes', (string) $bodyLen)
             ->withHeader('X-Message-Id', (string) $msg['id'])
             ->withHeader('X-Display-Duration-Sec', (string) ($msg['display_duration_sec'] ?? ''))
+            ->withoutHeader('Transfer-Encoding')
             ->withStatus(200);
     }
 
@@ -85,6 +94,26 @@ final class DeviceController
         $messageId = (int) ($args['id'] ?? 0);
         if (!$this->messages->ack((int) $device['id'], $messageId)) {
             return JsonResponse::error($response, 'ack failed', 404);
+        }
+        return JsonResponse::ok($response, ['ok' => true]);
+    }
+
+    public function opened(Request $request, Response $response, array $args): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $messageId = (int) ($args['id'] ?? 0);
+        if (!$this->messages->opened((int) $device['id'], $messageId)) {
+            return JsonResponse::error($response, 'opened failed', 404);
+        }
+        return JsonResponse::ok($response, ['ok' => true]);
+    }
+
+    public function seen(Request $request, Response $response, array $args): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $messageId = (int) ($args['id'] ?? 0);
+        if (!$this->messages->seen((int) $device['id'], $messageId)) {
+            return JsonResponse::error($response, 'seen failed', 404);
         }
         return JsonResponse::ok($response, ['ok' => true]);
     }

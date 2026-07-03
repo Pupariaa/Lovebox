@@ -69,6 +69,37 @@ final class AuthService
         return $this->users->verifyEmail($token);
     }
 
+    public function requestPasswordReset(string $email): void
+    {
+        $email = strtolower(trim($email));
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return;
+        }
+        $user = $this->users->findByEmail($email);
+        if (!$user) {
+            return;
+        }
+        $token = TokenUtil::randomHex(24);
+        $expiresAt = date('Y-m-d H:i:s', time() + 3600);
+        $this->users->setPasswordResetToken((int) $user['id'], $token, $expiresAt);
+        $this->email->sendPasswordReset($user['email'], $token);
+    }
+
+    public function resetPassword(string $token, string $password): bool
+    {
+        if (strlen($password) < 8) {
+            throw new \InvalidArgumentException('password too short');
+        }
+        $user = $this->users->findByPasswordResetToken($token);
+        if (!$user) {
+            return false;
+        }
+        $userId = (int) $user['id'];
+        $this->users->updatePassword($userId, password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]));
+        $this->users->revokeAllRefreshTokens($userId);
+        return true;
+    }
+
     private function issueTokens(int $userId, string $email): array
     {
         $refresh = TokenUtil::randomHex(32);

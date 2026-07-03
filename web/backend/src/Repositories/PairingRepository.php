@@ -12,6 +12,38 @@ final class PairingRepository
     {
     }
 
+    public function findActiveBySenderAndPartnerOwner(int $senderUserId, int $targetDeviceId): ?array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT p.*, d.device_name, d.display_name, d.uuid AS target_uuid, d.serial_number,
+                    d.last_seen_at, d.firmware_version
+             FROM pairings p
+             JOIN devices d ON d.id = p.target_device_id
+             WHERE p.sender_user_id = :uid AND p.status = 'active'
+               AND d.owner_user_id = (
+                   SELECT owner_user_id FROM devices WHERE id = :tid LIMIT 1
+               )
+             ORDER BY d.last_seen_at IS NULL, d.last_seen_at DESC, p.created_at ASC
+             LIMIT 1"
+        );
+        $stmt->execute(['uid' => $senderUserId, 'tid' => $targetDeviceId]);
+        $row = $stmt->fetch();
+        return $row ?: null;
+    }
+
+    public function retargetAllActivePairings(int $fromDeviceId, int $toDeviceId): int
+    {
+        if ($fromDeviceId === $toDeviceId) {
+            return 0;
+        }
+        $stmt = $this->pdo->prepare(
+            "UPDATE pairings SET target_device_id = :to
+             WHERE target_device_id = :from AND status = 'active'"
+        );
+        $stmt->execute(['to' => $toDeviceId, 'from' => $fromDeviceId]);
+        return $stmt->rowCount();
+    }
+
     public function listActiveBySender(int $userId): array
     {
         $stmt = $this->pdo->prepare(
@@ -98,13 +130,18 @@ final class PairingRepository
         return $stmt->rowCount() > 0;
     }
 
-    public function createPairingCode(string $code, int $userId, int $deviceId, string $expiresAt): void
+    public function createPairingCode(string $code, int $userId, int $deviceId, int $ttlSeconds): void
     {
         $stmt = $this->pdo->prepare(
             'INSERT INTO pairing_codes (code, owner_user_id, device_id, expires_at)
-             VALUES (:code, :uid, :did, :exp)'
+             VALUES (:code, :uid, :did, DATE_ADD(NOW(), INTERVAL :ttl SECOND))'
         );
-        $stmt->execute(['code' => $code, 'uid' => $userId, 'did' => $deviceId, 'exp' => $expiresAt]);
+        $stmt->execute([
+            'code' => $code,
+            'uid' => $userId,
+            'did' => $deviceId,
+            'ttl' => max(1, $ttlSeconds),
+        ]);
     }
 
     public function invalidateCodesForUser(int $userId): void

@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Boite a Coeur — Sim web</title>
+  <title>Boite a Coeur - Sim web</title>
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>
   <div class="app">
     <header class="header">
       <h1>Boite a Coeur</h1>
-      <p class="subtitle">Simulateur web (Chrome / Edge, Web Bluetooth)</p>
+      <p class="subtitle">App web de test (Chrome / Edge, Web Bluetooth)</p>
     </header>
 
     <section id="authPanel" class="panel">
@@ -45,7 +45,7 @@
 
       <section class="block">
         <h2>Boite Bluetooth</h2>
-        <p class="hint">La boite doit etre en mode configuration WiFi (Bluetooth actif). Eloigne le telephone si la boite y est deja connectee. Chrome affiche tous les peripheriques BLE si le filtre strict est vide — choisis le nom de ta boite (ex. BaCxs32f2325).</p>
+        <p class="hint">La boite doit etre en mode configuration WiFi (Bluetooth actif). Eloigne le telephone si la boite y est deja connectee. Choisis le nom de ta boite dans la liste Chrome (ex. BaCxs32f2325).</p>
         <div class="row">
           <button type="button" id="bleConnectBtn" class="btn primary">Connecter une boite</button>
           <button type="button" id="bleDisconnectBtn" class="btn ghost" disabled>Deconnecter</button>
@@ -65,7 +65,10 @@
 
       <section class="block">
         <h2>Contacts</h2>
-        <button type="button" id="generateCodeBtn" class="btn">Generer un code de liaison</button>
+        <div class="row">
+          <button type="button" id="generateCodeBtn" class="btn">Generer un code</button>
+          <button type="button" id="refreshPairingBtn" class="btn ghost">Actualiser</button>
+        </div>
         <p id="pairingCode" class="mono hidden"></p>
         <button type="button" id="copyCodeBtn" class="btn ghost">Copier le code</button>
         <label class="field">
@@ -73,16 +76,26 @@
           <input id="acceptCodeInput" type="text" placeholder="LOVE-XXXX">
         </label>
         <button type="button" id="acceptCodeBtn" class="btn">Lier avec ce code</button>
+        <div id="contactsList" class="contacts-list"></div>
       </section>
 
       <section class="block">
         <h2>Message</h2>
+        <label class="field">
+          <span>Destinataire</span>
+          <select id="targetSelect"></select>
+        </label>
         <label class="field">
           <span>Texte</span>
           <textarea id="messageText" rows="3" placeholder="Message pour la boite partenaire"></textarea>
         </label>
         <button type="button" id="sendMsgBtn" class="btn primary">Envoyer</button>
         <p id="msgResult" class="muted"></p>
+        <div class="row">
+          <h3 class="inline-title">Envoyes</h3>
+          <button type="button" id="refreshSentBtn" class="btn ghost">Actualiser</button>
+        </div>
+        <div id="sentList" class="sent-list"></div>
       </section>
     </section>
   </div>

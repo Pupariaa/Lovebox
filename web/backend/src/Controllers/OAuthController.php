@@ -19,7 +19,7 @@ final class OAuthController
     {
         $provider = (string) ($args['provider'] ?? '');
         try {
-            $url = $this->oauth->startUrl($provider);
+            $url = $this->oauth->startUrl($provider, $request->getQueryParams());
             return $response->withHeader('Location', $url)->withStatus(302);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
@@ -32,10 +32,15 @@ final class OAuthController
         $params = $request->getQueryParams();
         try {
             $tokens = $this->oauth->handleCallback($provider, $params);
+            $native = OAuthService::decodeNativeRedirect((string) ($params['state'] ?? ''));
+            $query = http_build_query($tokens);
+            if ($native !== null) {
+                $separator = str_contains($native, '?') ? '&' : '?';
+                return $response->withHeader('Location', $native . $separator . $query)->withStatus(302);
+            }
             $settings = require dirname(__DIR__, 2) . '/config/settings.php';
             $redirect = rtrim($settings['app']['url'], '/') . '/sim/oauth-callback.html';
-            $fragment = http_build_query($tokens);
-            return $response->withHeader('Location', $redirect . '?' . $fragment)->withStatus(302);
+            return $response->withHeader('Location', $redirect . '?' . $query)->withStatus(302);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
         }

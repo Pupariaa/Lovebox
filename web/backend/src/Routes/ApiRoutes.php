@@ -32,6 +32,9 @@ final class ApiRoutes
             $group->post('/auth/refresh', AuthController::class . ':refresh');
             $group->post('/auth/logout', AuthController::class . ':logout');
             $group->get('/auth/verify-email', AuthController::class . ':verifyEmail');
+            $group->post('/auth/forgot-password', AuthController::class . ':forgotPassword');
+            $group->get('/auth/reset-password', AuthController::class . ':resetPasswordPage');
+            $group->post('/auth/reset-password', AuthController::class . ':resetPasswordSubmit');
 
             $group->get('/auth/oauth/{provider}/start', OAuthController::class . ':start');
             $group->get('/auth/oauth/{provider}/callback', OAuthController::class . ':callback');
@@ -53,6 +56,8 @@ final class ApiRoutes
                 $deviceGroup->get('/devices/firmware/check', OtaController::class . ':checkFirmware');
                 $deviceGroup->post('/devices/heartbeat', DeviceController::class . ':heartbeat');
                 $deviceGroup->post('/devices/messages/{id}/ack', DeviceController::class . ':ack');
+                $deviceGroup->post('/devices/messages/{id}/opened', DeviceController::class . ':opened');
+                $deviceGroup->post('/devices/messages/{id}/seen', DeviceController::class . ':seen');
                 $deviceGroup->post('/devices/messages/{id}/nack', DeviceController::class . ':nack');
                 $deviceGroup->post('/devices/commands/{id}/ack', DeviceController::class . ':ackCommand');
                 $deviceGroup->post('/devices/commands/{id}/fail', DeviceController::class . ':failCommand');

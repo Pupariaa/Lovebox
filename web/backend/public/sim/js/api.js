@@ -49,7 +49,11 @@ const Api = (() => {
     const text = await res.text();
     let data = {};
     if (text) {
-      try { data = JSON.parse(text); } catch (_) { data = { error: text }; }
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = { error: text };
+      }
     }
     if (!res.ok) {
       throw new Error(data.error || res.statusText || "request failed");
@@ -120,12 +124,20 @@ const Api = (() => {
     });
   }
 
+  async function unlinkPairing(pairingId) {
+    return request(`/api/v1/pairings/${pairingId}`, { method: "DELETE" });
+  }
+
   async function sendMessage(targetDeviceId, bacmBuffer) {
     return request(`/api/v1/messages?target_device_id=${targetDeviceId}`, {
       method: "POST",
       headers: { "Content-Type": "application/octet-stream" },
       body: bacmBuffer,
     });
+  }
+
+  async function listSentMessages(page = 1) {
+    return request(`/api/v1/messages/sent?page=${page}`);
   }
 
   return {
@@ -141,6 +153,8 @@ const Api = (() => {
     getPairingState,
     generatePairingCode,
     acceptPairingCode,
+    unlinkPairing,
     sendMessage,
+    listSentMessages,
   };
 })();

@@ -27,35 +27,8 @@
     return "https://boite-a-coeur.techalchemy.fr";
   }
 
-  async function refreshDashboard() {
-    const [deviceRes, pairingRes] = await Promise.all([
-      Api.getMyDevice(),
-      Api.getPairingState(),
-    ]);
-    const cards = $("statusCards");
-    cards.innerHTML = "";
-    const devices = deviceRes.devices || (deviceRes.device ? [deviceRes.device] : []);
-    const pairing = pairingRes;
-    const owned = devices[0];
-    cards.appendChild(card(
-      "Ma boite",
-      owned ? `${owned.display_name || owned.device_name} (id ${owned.id})` : "Aucune boite associee",
-    ));
-    const targets = pairing.linked_targets || (pairing.linked_target ? [pairing.linked_target] : []);
-    cards.appendChild(card(
-      "Contacts",
-      targets.length
-        ? targets.map((t) => `${t.display_name || t.device_name} (id ${t.device_id})`).join(", ")
-        : "Aucun contact lie",
-    ));
-    if (owned) {
-      const label = owned.online
-        ? "En ligne"
-        : (owned.last_seen_seconds_ago != null
-          ? `Vu il y a ${Math.max(1, Math.round(owned.last_seen_seconds_ago / 60))} min`
-          : "Hors ligne");
-      cards.appendChild(card("Statut boite", label));
-    }
+  function sleep(ms) {
+    return new Promise((r) => setTimeout(r, ms));
   }
 
   function card(title, body) {
@@ -76,6 +49,136 @@
     $("authPanel").classList.remove("hidden");
   }
 
+  function renderTargets(targets) {
+    const sel = $("targetSelect");
+    const prev = sel.value;
+    sel.innerHTML = "";
+    if (!targets.length) {
+      const opt = document.createElement("option");
+      opt.value = "";
+      opt.textContent = "Aucun contact lie";
+      sel.appendChild(opt);
+      return;
+    }
+    targets.forEach((t) => {
+      const opt = document.createElement("option");
+      opt.value = String(t.device_id);
+      opt.textContent = `${t.display_name || t.device_name} (${t.serial_number || "?"})`;
+      sel.appendChild(opt);
+    });
+    if (prev) sel.value = prev;
+  }
+
+  function renderContacts(targets) {
+    const list = $("contactsList");
+    list.innerHTML = "";
+    if (!targets.length) {
+      list.innerHTML = '<p class="muted">Aucun contact lie</p>';
+      return;
+    }
+    targets.forEach((t) => {
+      const row = document.createElement("div");
+      row.className = "contact-row";
+      const label = document.createElement("span");
+      label.textContent = `${t.display_name || t.device_name} (${t.serial_number || "?"})`;
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn ghost btn-small";
+      btn.textContent = "Delier";
+      btn.addEventListener("click", async () => {
+        try {
+          await Api.unlinkPairing(t.pairing_id);
+          await refreshDashboard();
+          logBle("Contact delie");
+        } catch (e) {
+          alert(e.message);
+        }
+      });
+      row.appendChild(label);
+      row.appendChild(btn);
+      list.appendChild(row);
+    });
+  }
+
+  async function refreshSent() {
+    const list = $("sentList");
+    list.innerHTML = "";
+    try {
+      const data = await Api.listSentMessages(1);
+      const rows = data.items || [];
+      if (!rows.length) {
+        list.innerHTML = '<p class="muted">Aucun message envoye</p>';
+        return;
+      }
+      rows.forEach((r) => {
+        const item = document.createElement("div");
+        item.className = "sent-item";
+        if (r.preview_base64) {
+          const img = document.createElement("img");
+          img.className = "sent-preview";
+          img.src = `data:image/png;base64,${r.preview_base64}`;
+          img.alt = "preview";
+          item.appendChild(img);
+        }
+        const meta = document.createElement("div");
+        meta.className = "sent-meta";
+        meta.textContent = `#${r.message_id} -> ${r.target_device_name || "?"} (${r.created_at})`;
+        item.appendChild(meta);
+        list.appendChild(item);
+      });
+    } catch (e) {
+      list.innerHTML = `<p class="error">${e.message}</p>`;
+    }
+  }
+
+  async function refreshDashboard() {
+    const [deviceRes, pairingRes] = await Promise.all([
+      Api.getMyDevice(),
+      Api.getPairingState(),
+    ]);
+    const cards = $("statusCards");
+    cards.innerHTML = "";
+    const devices = deviceRes.devices || (deviceRes.device ? [deviceRes.device] : []);
+    const owned = devices[0];
+    cards.appendChild(
+      card(
+        "Ma boite",
+        owned
+          ? `${owned.display_name || owned.device_name} (id ${owned.id}, ${owned.serial_number || "?"})`
+          : "Aucune boite associee",
+      ),
+    );
+    const targets = pairingRes.linked_targets || (pairingRes.linked_target ? [pairingRes.linked_target] : []);
+    cards.appendChild(
+      card(
+        "Contacts",
+        targets.length
+          ? targets
+              .map((t) => {
+                const status = t.online
+                  ? "en ligne"
+                  : t.last_seen_seconds_ago != null
+                    ? `vu il y a ${Math.max(1, Math.round(t.last_seen_seconds_ago / 60))} min`
+                    : "hors ligne";
+                return `${t.display_name || t.device_name} (id ${t.device_id}, ${status})`;
+              })
+              .join("<br>")
+          : "Aucun contact lie",
+      ),
+    );
+    if (owned) {
+      const label = owned.online
+        ? "En ligne"
+        : owned.last_seen_seconds_ago != null
+          ? `Vu il y a ${Math.max(1, Math.round(owned.last_seen_seconds_ago / 60))} min`
+          : "Hors ligne";
+      cards.appendChild(card("Statut boite", label));
+    }
+    renderTargets(targets);
+    renderContacts(targets);
+    await refreshSent();
+  }
+
   async function claimWithRetry(uuid, serialNumber) {
     const delays = [2000, 3000, 3000, 3000, 3000, 3000];
     for (let i = 0; i < delays.length; i++) {
@@ -91,10 +194,6 @@
         await sleep(delays[i]);
       }
     }
-  }
-
-  function sleep(ms) {
-    return new Promise((r) => setTimeout(r, ms));
   }
 
   $("tabLogin").addEventListener("click", () => {
@@ -146,7 +245,7 @@
       $("bleDisconnectBtn").disabled = false;
       $("wifiProvisionBtn").disabled = false;
       if (info.identity) {
-        logBle(`Identity: ${info.identity.deviceName} / ${info.identity.serialNumber || "?"}`);
+        logBle(`Identity: ${info.identity.deviceName} / ${info.identity.serialNumber || "?"} / uuid ${info.identity.uuid ? "OK" : "?"}`);
       } else {
         logBle("Warning: box identity not read");
       }
@@ -203,7 +302,7 @@
     try {
       await navigator.clipboard.writeText(code);
       logBle("Code copied");
-    } catch (e) {
+    } catch {
       alert(code);
     }
   });
@@ -213,25 +312,38 @@
     if (!code) return;
     try {
       await Api.acceptPairingCode(code);
+      $("acceptCodeInput").value = "";
       await refreshDashboard();
-      alert("Contact lie");
+      logBle("Contact lie");
     } catch (e) {
       alert(e.message);
     }
   });
 
+  $("refreshPairingBtn").addEventListener("click", () => {
+    refreshDashboard().catch((e) => alert(e.message));
+  });
+
+  $("refreshSentBtn").addEventListener("click", () => {
+    refreshSent().catch((e) => alert(e.message));
+  });
+
   $("sendMsgBtn").addEventListener("click", async () => {
     const text = $("messageText").value.trim();
     if (!text) return;
+    const targetId = parseInt($("targetSelect").value, 10);
+    if (!targetId) {
+      $("msgResult").textContent = "Selectionnez un contact";
+      $("msgResult").className = "error";
+      return;
+    }
     try {
-      const pairing = await Api.getPairingState();
-      const targets = pairing.linked_targets || (pairing.linked_target ? [pairing.linked_target] : []);
-      const targetId = targets[0]?.device_id;
-      if (!targetId) throw new Error("No contact linked");
       const bacm = Bacm.packSimpleText(text);
-      await Api.sendMessage(targetId, bacm);
-      $("msgResult").textContent = "Message envoye";
+      const res = await Api.sendMessage(targetId, bacm);
+      $("messageText").value = "";
+      $("msgResult").textContent = `Message envoye (id ${res.message_id}) vers boite ${targetId}. Attendre ~30s le poll.`;
       $("msgResult").className = "ok";
+      await refreshSent();
     } catch (e) {
       $("msgResult").textContent = e.message;
       $("msgResult").className = "error";
@@ -239,7 +351,7 @@
   });
 
   $("apiBase").value = Api.loadBase(defaultApiBase());
-  $("wifiSsid").value = localStorage.getItem("bac_sim_wifi_ssid") || "freebox_MAISON";
+  $("wifiSsid").value = localStorage.getItem("bac_sim_wifi_ssid") || "";
   $("wifiPass").value = localStorage.getItem("bac_sim_wifi_pass") || "";
 
   if (!Ble.supported()) {
