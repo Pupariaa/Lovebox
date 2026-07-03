@@ -6,10 +6,7 @@ factory/tools/bin/*
 !factory/tools/bin/.gitkeep
 factory/tools/tmp/
 factory/archives/**
-!factory/archives/**/
-!factory/archives/**/*.json
-!factory/archives/**/*.txt
-factory/archives/**/*.bin
+!factory/archives/.gitkeep
 firmware/**/build/
 firmware/boite-a-coeur/mkfatfs.bin
 web/backend/vendor/
