@@ -19,7 +19,14 @@ MariaDB 10.6+ (InnoDB, utf8mb4). Apply migrations in order:
 ```bash
 mysql -u backend -p techalch_bac_prod < migrations/001_initial.sql
 mysql -u backend -p techalch_bac_prod < migrations/002_password_reset.sql
+mysql -u backend -p techalch_bac_prod < migrations/002_identity_refactor.sql
 mysql -u backend -p techalch_bac_prod < migrations/003_message_lifecycle.sql
+mysql -u backend -p techalch_bac_prod < migrations/003_serial_unique.sql
+mysql -u backend -p techalch_bac_prod < migrations/004_firmware_releases.sql
+mysql -u backend -p techalch_bac_prod < migrations/005_device_telemetry.sql
+mysql -u backend -p techalch_bac_prod < migrations/006_pairing_alias.sql
+mysql -u backend -p techalch_bac_prod < migrations/007_deletion_requests.sql
+mysql -u backend -p techalch_bac_prod < migrations/008_deletion_request_action.sql
 ```
 
 On MariaDB, if `003` fails on `DROP CHECK`, use `DROP CONSTRAINT` instead (see comments in the migration file).
@@ -42,11 +49,11 @@ Admin helpers (manual ops only): `migrations/admin/`.
 
 `JWT_SECRET` in `.env` must be at least **32 characters** (64+ recommended).
 
-PHP limits on hosting: long poll max 25s, uploads up to 2 MB BACM payloads.
+PHP limits on hosting: long poll max 25s, uploads up to 3 MB BACM payloads.
 
 ## API base
 
-`https://boite-a-coeur.techalchemy.fr/api/v1`
+`https://boite-a-coeur.fr/api/v1`
 
 ## Mobile auth
 
@@ -83,3 +90,24 @@ Only one active message per device at a time (`delivering`, `received`, or `open
 ## Browser sim
 
 Static UI under `public/sim/` — login, pairing, BACM composer, send to linked box.
+
+## Admin dashboard
+
+Static UI under `public/admin/` — fleet telemetry, version distribution, online/offline
+status, and batch OTA management. Guarded by the shared `X-Ota-Admin-Key` (`OTA_ADMIN_KEY`).
+
+Admin endpoints (all under `OtaAdminMiddleware`):
+
+| Endpoint | Role |
+| --- | --- |
+| `GET /admin/stats` | Fleet counters, version distribution, active release adoption, regions |
+| `GET /admin/devices` | Filterable device list with telemetry snapshot |
+| `GET /admin/devices/{id}` | Device detail + recent OTA command history |
+| `POST /admin/devices/notify-batch` | Enqueue OTA for a selected set of device ids |
+| `POST /admin/devices/command` | Remote `reboot` / `factory_reset` / `config` for a set of device ids |
+
+Remote commands are enqueued in `device_commands` and consumed by the device on its next
+`commands/poll`, so a whole fleet can be managed without physical access.
+
+Devices report a telemetry snapshot (`rssi`, `free_heap`, `uptime_s`, `ip`, `mac`) via
+`POST /devices/heartbeat` at a low rate (every 5 min) so they do not spam the server.
