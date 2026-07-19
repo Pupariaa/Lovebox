@@ -1,53 +1,41 @@
-import { useEffect, useState } from "react";
-import {
-  AlphaType,
-  Canvas,
-  ColorType,
-  Image as SkiaImage,
-  Skia,
-  type SkImage,
-} from "@shopify/react-native-skia";
-import { loadThumbnail } from "@/domain/bacm/emojiFrameLoader";
-import { rgb565ToRgba } from "@/domain/bacm/scenePreview";
-import { compositeFrameOnBg } from "@/domain/bacm/composite";
-import { hexTo565 } from "@/domain/bacm/rgb565";
+import { View } from "react-native";
+import { Image } from "expo-image";
+import { fluentIconUrl } from "@/domain/bacm/fluentEmoji";
 
 type Props = {
   refId: string;
   size: number;
   bgColor?: string;
+  animate?: boolean;
 };
 
-function makeImage(pixels: Uint16Array, side: number): SkImage | null {
-  const rgba = rgb565ToRgba(pixels);
-  const data = Skia.Data.fromBytes(rgba);
-  return Skia.Image.MakeImage(
-    { width: side, height: side, colorType: ColorType.RGBA_8888, alphaType: AlphaType.Opaque },
-    data,
-    side * 4,
-  );
-}
-
-export function EmojiThumb({ refId, size, bgColor = "#2E141C" }: Props) {
-  const [image, setImage] = useState<SkImage | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const frame = await loadThumbnail(refId, size);
-      if (cancelled || !frame) return;
-      const bg = new Uint16Array(size * size).fill(hexTo565(bgColor));
-      compositeFrameOnBg(bg, size, size, frame.pixels, frame.side, frame.side, frame.alpha, 0, 0, size, size);
-      setImage(makeImage(bg, size));
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [refId, size, bgColor]);
-
+// Renders the animated emoji directly through expo-image. Native decoding (Glide/SDWebImage)
+// plays the APNG off the JS thread and caches it to disk. `animate` maps to expo-image's
+// autoplay: when false the first frame is shown as a cheap static thumbnail, so the grid renders
+// instantly and only the cells currently on screen actually animate.
+export function EmojiThumb({ refId, size, bgColor = "#2E141C", animate = false }: Props) {
+  const uri = fluentIconUrl(refId);
   return (
-    <Canvas style={{ width: size, height: size }}>
-      {image ? <SkiaImage image={image} x={0} y={0} width={size} height={size} fit="fill" /> : null}
-    </Canvas>
+    <View
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: bgColor,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {uri ? (
+        <Image
+          source={{ uri }}
+          style={{ width: size, height: size }}
+          contentFit="contain"
+          cachePolicy="memory-disk"
+          transition={0}
+          autoplay={animate}
+          recyclingKey={refId}
+        />
+      ) : null}
+    </View>
   );
 }
