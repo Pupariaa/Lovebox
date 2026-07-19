@@ -50,7 +50,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.tchy.boiteacoeur.AppConfig
 import com.tchy.boiteacoeur.data.ble.BleDeviceItem
 import com.tchy.boiteacoeur.platform.rememberBluetoothPermissionRequester
 import com.tchy.boiteacoeur.ui.components.AppBackground
@@ -69,8 +68,8 @@ private enum class BleSetupStep {
 @Composable
 fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
     var step by remember { mutableStateOf(BleSetupStep.Scan) }
-    var ssid by remember { mutableStateOf(AppConfig.DEV_WIFI_SSID) }
-    var password by remember { mutableStateOf(AppConfig.DEV_WIFI_PASSWORD) }
+    var ssid by remember { mutableStateOf("") }
+    var password by remember { mutableStateOf("") }
     var selectedDevice by remember { mutableStateOf<BleDeviceItem?>(null) }
     var permissionsGranted by remember { mutableStateOf(false) }
 
@@ -86,6 +85,11 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
         vm.resetBleProvision()
     }
 
+    fun cancelProvisioning() {
+        vm.cancelBleProvisioning()
+        step = BleSetupStep.Credentials
+    }
+
     fun goBack() {
         when (step) {
             BleSetupStep.Scan -> onDone()
@@ -94,7 +98,7 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
                 vm.resetBleProvision()
                 onDone()
             }
-            BleSetupStep.Provisioning -> Unit
+            BleSetupStep.Provisioning -> cancelProvisioning()
         }
     }
 
@@ -114,10 +118,11 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
                     )
                 },
                 navigationIcon = {
-                    if (step != BleSetupStep.Provisioning) {
-                        IconButton(onClick = { goBack() }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Retour")
-                        }
+                    IconButton(onClick = { goBack() }) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = if (step == BleSetupStep.Provisioning) "Annuler" else "Retour",
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -151,7 +156,7 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
                         password = password,
                         onSsidChange = { ssid = it },
                         onPasswordChange = { password = it },
-                        loading = vm.loading,
+                        loading = vm.bleProvisioning,
                         onSubmit = {
                             val device = selectedDevice ?: return@CredentialsStep
                             step = BleSetupStep.Provisioning
@@ -169,6 +174,7 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
                         phase = vm.bleProvisionPhase,
                         wifiProvisioned = vm.bleWifiProvisioned,
                         deviceName = vm.bleProvisionDeviceName,
+                        onCancel = { cancelProvisioning() },
                     )
                 }
                 BleSetupStep.Result -> {
@@ -177,7 +183,7 @@ fun BleSetupScreen(vm: AppViewModel, onDone: () -> Unit) {
                         deviceName = vm.bleProvisionDeviceName,
                         error = vm.bleProvisionError,
                         wifiProvisioned = vm.bleWifiProvisioned,
-                        loading = vm.loading,
+                        loading = vm.bleProvisioning,
                         onContinue = {
                             vm.resetBleProvision()
                             onDone()
@@ -219,21 +225,21 @@ private fun ScanStep(
 
         Button(
             onClick = { vm.scanBle() },
-            enabled = !vm.loading,
+            enabled = !vm.bleScanning,
             modifier = Modifier.fillMaxWidth().height(48.dp),
             shape = MaterialTheme.shapes.medium,
             colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
         ) {
             Icon(Icons.Default.BluetoothSearching, contentDescription = null)
             Spacer(Modifier.size(8.dp))
-            Text(if (vm.loading) "Recherche..." else "Rechercher ma boîte")
+            Text(if (vm.bleScanning) "Recherche..." else "Rechercher ma boîte")
         }
 
         Column(
             modifier = Modifier.weight(1f),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            if (vm.bleDevices.isEmpty() && !vm.loading) {
+            if (vm.bleDevices.isEmpty() && !vm.bleScanning) {
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.medium,
@@ -393,6 +399,7 @@ private fun ProvisioningStep(
     phase: BleProvisionPhase,
     wifiProvisioned: Boolean,
     deviceName: String?,
+    onCancel: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -447,6 +454,13 @@ private fun ProvisioningStep(
             done = phase == BleProvisionPhase.Success,
             active = phase == BleProvisionPhase.LinkingAccount,
         )
+        Spacer(Modifier.height(32.dp))
+        OutlinedButton(
+            onClick = onCancel,
+            modifier = Modifier.fillMaxWidth().height(48.dp),
+        ) {
+            Text("Annuler")
+        }
     }
 }
 
