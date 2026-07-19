@@ -75,8 +75,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import com.tchy.boiteacoeur.AppConfig
-import com.tchy.boiteacoeur.platform.openUrl
 import com.tchy.boiteacoeur.resources.logo_lovebox
 import com.tchy.boiteacoeur.resources.Res
 import com.tchy.boiteacoeur.ui.theme.PlumBackground
@@ -103,7 +101,7 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
     val registerMode = selectedTab == 1
     val emailValid = email.contains("@") && email.contains(".")
     val passwordValid = password.length >= 8
-    val canSubmit = !vm.loading && emailValid && passwordValid
+    val canSubmit = !vm.authLoading && emailValid && passwordValid
 
     LaunchedEffect(Unit) {
         contentVisible = true
@@ -222,7 +220,7 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
                         else vm.login(email, password, onAuthenticated)
                     },
                     canSubmit = canSubmit,
-                    loading = vm.loading,
+                    loading = vm.authLoading,
                     emailValid = emailValid,
                     passwordValid = passwordValid,
                 )
@@ -237,18 +235,25 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
                     Column(
                         modifier = Modifier.fillMaxWidth(),
                         verticalArrangement = Arrangement.spacedBy(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        OAUTH_PROVIDERS.forEach { (provider, label) ->
+                        OAUTH_PROVIDERS.forEach { (_, label) ->
                             OutlinedButton(
-                                onClick = {
-                                    openUrl("${AppConfig.API_BASE}/api/v1/auth/oauth/$provider/start")
-                                },
+                                onClick = {},
+                                enabled = false,
                                 modifier = Modifier.fillMaxWidth().height(44.dp),
                                 shape = MaterialTheme.shapes.medium,
                             ) {
                                 Text(label, style = MaterialTheme.typography.labelMedium)
                             }
                         }
+                        Text(
+                            text = "La connexion via un fournisseur n'est pas disponible dans cette version. Utilise ton adresse e-mail.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
                     }
                 }
             }
