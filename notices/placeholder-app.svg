@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="180" height="320" viewBox="0 0 180 320">
+  <rect width="180" height="320" rx="16" fill="#FDF8FA"/>
+  <path d="M90 120c-8-11-24-11-24 4 0 10 12 18 24 27 12-9 24-17 24-27 0-15-16-15-24-4z" fill="none" stroke="#E07A9A" stroke-width="2"/>
+  <text x="90" y="180" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#7B6B9A">Capture</text>
+  <text x="90" y="198" text-anchor="middle" font-family="Arial,sans-serif" font-size="13" fill="#7B6B9A">app</text>
+</svg>

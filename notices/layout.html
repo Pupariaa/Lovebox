@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Notice Boîte à Cœur</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        :root {
+            --device-ar: 280 / 240;
+            --app-ar: 339 / 393;
+            --icon-ar: 542 / 428;
+        }
+        body {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: 10mm;
+        }
+        .notice {
+            justify-content: center;
+            height: 270mm;
+            width: 190mm;
+            border: 1px solid #f5f1f1;
+            margin: 10mm;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            gap: -20mm;
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.35;
+            text-align: justify;
+            text-justify: inter-word;
+            padding-left: 20mm;
+            padding-right: 20mm;
+        }
+        .row {
+            width: 50mm;
+            height: 45mm;
+            border: 1px solid rgb(241, 238, 238);
+            font-family: Arial, Helvetica, sans-serif;
+            line-height: 1.35;
+            text-align: justify;
+            text-justify: inter-word;
+            justify-content: center;
+            display: flex;
+            position: relative;
+        }
+        .row > span {
+            position: absolute;
+            bottom: 1mm;
+            left: 0;
+            width: 100%;
+            text-align: center;
+            font-size: 8pt;
+            color: #B0A4C0;
+        }
+        .content {
+            width: 48mm;
+            height: 38mm;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            margin-top: 2mm;
+        }
+        .content_outer {
+            width: 48mm;
+            height: 43.5mm;
+            display: flex;
+            flex-direction: row;
+            flex-wrap: wrap;
+            margin-top: 0.5mm;
+        }
+        .content_outer img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        /* --- interior page --- */
+        .pg {
+            flex-direction: column;
+            align-content: flex-start;
+            padding: 1mm 1.4mm 0;
+            gap: 0.8mm;
+            overflow: hidden;
+            color: #5A5070;
+        }
+        .pg-head {
+            display: flex;
+            align-items: center;
+            gap: 1.2mm;
+            width: 100%;
+        }
+        .pg-step {
+            flex-shrink: 0;
+            width: 4.2mm;
+            height: 4.2mm;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #8B7BAF, #E07A9A);
+            color: #fff;
+            font-size: 6pt;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+        .pg-step:empty {
+            display: none;
+        }
+        .pg-title {
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 7pt;
+            font-weight: 700;
+            color: #7B6B9A;
+            line-height: 1.1;
+        }
+
+        /* stacked layout: big screenshot on top, caption below (device pages) */
+        .pg-stack {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+            gap: 1mm;
+        }
+        /* side layout: portrait screenshot left, caption right (app pages) */
+        .pg-side {
+            display: flex;
+            flex-direction: row;
+            align-items: center;
+            width: 100%;
+            gap: 1.8mm;
+        }
+
+        .pg-shot {
+            border-radius: 1.5mm;
+            overflow: hidden;
+            background: #FDF8FA;
+            flex-shrink: 0;
+        }
+        .pg-shot--device {
+            aspect-ratio: var(--device-ar);
+            height: 25.5mm;
+            width: auto;
+        }
+        .pg-shot--app {
+            aspect-ratio: var(--app-ar);
+            width: 13.5mm;
+        }
+        .pg-shot--icon {
+            aspect-ratio: var(--icon-ar);
+            width: 18mm;
+        }
+        .pg--app-lg {
+            padding-top: 0.4mm;
+            gap: 0.5mm;
+        }
+        .pg--app-lg .pg-title {
+            font-size: 6.5pt;
+        }
+        .pg--app-lg .pg-shot--app {
+            width: 24mm;
+        }
+        .pg--app-lg .pg-caption {
+            font-size: 5.3pt;
+            line-height: 1.2;
+        }
+        .pg--app-lg.pg-side {
+            gap: 1.2mm;
+        }
+        .pg-shot img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            object-position: center;
+            display: block;
+        }
+        .pg-caption {
+            font-size: 5.8pt;
+            line-height: 1.28;
+            color: #5A5070;
+            text-align: left;
+        }
+        .pg-stack .pg-caption {
+            text-align: center;
+            width: 100%;
+        }
+        .pg-side .pg-caption {
+            flex: 1;
+            min-width: 0;
+        }
+        .pg-caption--solo {
+            width: 100%;
+            text-align: center;
+            margin-top: 1.5mm;
+        }
+        .pg-qr {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 1mm;
+            width: 100%;
+            margin-top: 0.8mm;
+        }
+        .pg-qr img {
+            width: 24mm;
+            height: 24mm;
+            object-fit: contain;
+            display: block;
+        }
+        .pg-qr-labels {
+            display: flex;
+            gap: 5mm;
+            font-size: 6pt;
+            font-weight: 700;
+            color: #7B6B9A;
+            letter-spacing: 0.02em;
+        }
+        .pg-caption strong {
+            color: #7B6B9A;
+            font-weight: 700;
+        }
+        .pg-list {
+            font-size: 6pt;
+            line-height: 1.4;
+            padding-left: 3.5mm;
+            margin: 0.5mm 0;
+            text-align: left;
+            width: 100%;
+        }
+        .pg-list li {
+            margin-bottom: 1mm;
+        }
+        .pg-list li::marker {
+            color: #E07A9A;
+        }
+        .pg-note {
+            font-size: 5.2pt;
+            color: #8A7DA0;
+            font-style: italic;
+            line-height: 1.25;
+            text-align: left;
+            width: 100%;
+        }
+        .pg-icons {
+            display: flex;
+            gap: 1.6mm;
+            justify-content: center;
+            width: 100%;
+            margin-top: 1mm;
+        }
+        .pg-icon {
+            width: 6.5mm;
+            height: 6.5mm;
+            border-radius: 1.2mm;
+            background: linear-gradient(135deg, #EDE4F4, #FCE4EE);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 9pt;
+            color: #8B7BAF;
+        }
+        .pg-legend {
+            display: flex;
+            gap: 2.5mm;
+            font-size: 5.4pt;
+            width: 100%;
+            justify-content: center;
+        }
+        .pg-legend span {
+            display: flex;
+            align-items: center;
+            gap: 0.8mm;
+        }
+        .dot-short, .dot-long {
+            display: inline-block;
+            border-radius: 50%;
+            background: #E07A9A;
+        }
+        .dot-short {
+            width: 2mm;
+            height: 2mm;
+        }
+        .dot-long {
+            width: 2mm;
+            height: 4mm;
+            border-radius: 1mm;
+        }
+
+        /* --- legal back page --- */
+        .legal {
+            flex-direction: column;
+            align-content: flex-start;
+            padding: 1.4mm 1.6mm;
+            font-size: 4.5pt;
+            line-height: 1.22;
+            color: #4A4060;
+            gap: 0.3mm;
+            text-align: left;
+            overflow: hidden;
+        }
+        .legal h2 {
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 6.6pt;
+            color: #7B6B9A;
+            text-align: center;
+            width: 100%;
+            margin-bottom: 0.3mm;
+        }
+        .legal h3 {
+            font-size: 4.8pt;
+            color: #8B7BAF;
+            margin-top: 0.5mm;
+            width: 100%;
+        }
+        .legal p {
+            margin: 0;
+            width: 100%;
+        }
+        .legal-logos {
+            display: flex;
+            gap: 1.5mm;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            margin: 0.8mm 0;
+        }
+        .legal-logo {
+            height: 3.5mm;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .legal-logo img {
+            height: 100%;
+            width: auto;
+            display: block;
+        }
+        .legal-contact {
+            text-align: center;
+            font-size: 4.6pt;
+            color: #7B6B9A;
+            margin-top: 0.6mm;
+        }
+    </style>
+</head>
+<body>
+    <div class="notice">
+        <div id="24" class="row">
+            <div class="content_outer legal">
+                <h2>Informations légales</h2>
+                <p><strong>TechAlchemy</strong> — Boîte à Cœur — Modèle <strong>TCY BAC XS3</strong></p>
+                <div class="legal-logos">
+                    <div class="legal-logo"><img src="CE.svg" alt="CE"></div>
+                    <div class="legal-logo"><img src="DEEE.svg" alt="DEEE"></div>
+                    <div class="legal-logo"><img src="FCC.svg" alt="FCC"></div>
+                </div>
+                <p>Conforme aux directives UE applicables, dont 2014/53/UE (RED) — radio Wi-Fi et Bluetooth.</p>
+                <h3>Sécurité</h3>
+                <p>Alimentation 5 V CC par USB uniquement. Bloc secteur non fourni. Ne pas immerger ni ouvrir. Usage intérieur, 0–40 °C.</p>
+                <h3>Environnement (DEEE)</h3>
+                <p>Ne pas jeter avec les ordures ménagères ; déposer en point de collecte.</p>
+                <h3>Garantie</h3>
+                <p>Garantie légale de conformité de 2 ans (UE).</p>
+                <p class="legal-contact">support@boite-a-coeur.fr · boite-a-coeur.fr</p>
+            </div>
+        </div>
+        <div id="1" class="row">
+            <div class="content_outer"><img src="cov-fr.png" alt="Couverture"></div>
+        </div>
+
+        <div id="22" class="row">
+            <div class="content pg pg--app-lg">
+                <div class="pg-head"><span class="pg-step">18</span><h2 class="pg-title">Réinitialiser (app)</h2></div>
+                <div class="pg-side">
+                    <div class="pg-shot pg-shot--app"><img src="18.png" alt="App suppression"></div>
+                    <p class="pg-caption"><strong>Compte</strong> → Détail  de la boîte → <strong>Réinitialiser et supprimer</strong>. Dissocie la boîte et envoie l'ordre d'effacement.</p>
+                </div>
+            </div>
+            <span>22</span>
+        </div>
+        <div id="3" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">1</span><h2 class="pg-title">Le bouton</h2></div>
+                <div class="pg-side">
+                    <div class="pg-shot pg-shot--icon"><img src="1.png" alt="Bouton"></div>
+                    <p class="pg-caption"><strong>Court</strong> : ouvrir un message.<br><strong>Long</strong> (~2 s) : réglages.</p>
+                </div>
+                <div class="pg-legend">
+                    <span><i class="dot-short"></i> Appui court</span>
+                    <span><i class="dot-long"></i> Appui long</span>
+                </div>
+            </div>
+            <span>3</span>
+        </div>
+
+        <div id="20" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">17</span><h2 class="pg-title">Réinitialiser (boîte)</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="17.png" alt="Factory reset"></div>
+                    <p class="pg-caption">Appui long → <strong>Réinitialiser</strong>. La boîte doit être connectée à Internet pour se désinscrire.</p>
+                </div>
+            </div>
+            <span>20</span>
+        </div>
+        <div id="5" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">3</span><h2 class="pg-title">Mise en marche</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="3.png" alt="Splash"></div>
+                    <p class="pg-caption">Branche le <strong>câble USB</strong> fourni et attends l'écran d'accueil.</p>
+                </div>
+            </div>
+            <span>5</span>
+        </div>
+
+        <div id="18" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">15</span><h2 class="pg-title">Déconnecter le Wi-Fi</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="15.png" alt="Disconnect"></div>
+                    <p class="pg-caption">Appui long → Paramètres → Wi-Fi → <strong>Déconnecter</strong>. Efface le réseau Wi-Fi enregistré.</p>
+                </div>
+            </div>
+            <span>18</span>
+        </div>
+        <div id="7" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">5</span><h2 class="pg-title">Wi-Fi : la boîte attend</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="5.png" alt="First WiFi"></div>
+                    <p class="pg-caption">La boîte attend l'application en <strong>Bluetooth</strong>. Garde-la allumée à proximité.</p>
+                </div>
+            </div>
+            <span>7</span>
+        </div>
+
+        <div id="16" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">13</span><h2 class="pg-title">Langue</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="13.png" alt="Date heure"></div>
+                    <p class="pg-caption">Appui long → Paramètres → Langue → <strong>Français</strong>. Choisis la langue de l'interface.</p>
+                </div>
+            </div>
+            <span>16</span>
+        </div>
+        <div id="9" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">7</span><h2 class="pg-title">Connexion en cours</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="7.png" alt="Connecting"></div>
+                    <p class="pg-caption">Patiente. En cas d'échec, vérifie le mot de passe et réessaie via l'app.</p>
+                </div>
+            </div>
+            <span>9</span>
+        </div>
+
+        <div id="14" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">11</span><h2 class="pg-title">Ouvrir les réglages</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="11.png" alt="Settings"></div>
+                    <p class="pg-caption">Sur l'accueil, fais un <strong>appui long</strong> pour ouvrir les Réglages.</p>
+                </div>
+            </div>
+            <span>14</span>
+        </div>
+        <div id="11" class="row">
+            <div class="content pg pg--app-lg">
+                <div class="pg-head"><span class="pg-step">8</span><h2 class="pg-title">Associer une boîte</h2></div>
+                <div class="pg-side">
+                    <div class="pg-shot pg-shot--app"><img src="8.png" alt="Pairing"></div>
+                    <p class="pg-caption">Contact → <strong>Générer mon code</strong> ou saisis celui de ton partenaire. Chacun possède sa boîte.</p>
+                </div>
+            </div>
+            <span>11</span>
+        </div>
+    </div>
+
+    <div class="notice" >
+        <div id="2" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">♡</span><h2 class="pg-title">Contenu de l'emballage</h2></div>
+                <ul class="pg-list">
+                    <li>1× Boîte à Cœur</li>
+                    <li>1× Câble USB souple 1,5 m (USB-A)</li>
+                    <li>1× Notice d'utilisation</li>
+                </ul>
+                <p class="pg-note">Alimentation 5 V non incluse. Toute prise ou batterie USB-A conforme convient.</p>
+                <div class="pg-icons">
+                    <span class="pg-icon">♡</span>
+                    <span class="pg-icon">⌁</span>
+                    <span class="pg-icon">▣</span>
+                </div>
+            </div>
+            <span>2</span>
+        </div>
+        <div id="23" class="row">
+            <div class="content pg pg--app-lg">
+                <div class="pg-head"><span class="pg-step">19</span><h2 class="pg-title">En cas de souci</h2></div>
+                <p class="pg-caption pg-caption--solo">Pas de Wi-Fi ? Ouvre <strong>Compte</strong> → <strong>Configurer le WiFi</strong> pour reconfigurer le réseau via Bluetooth. support@boite-a-coeur.fr</p>
+            </div>
+            <span>23</span>
+        </div>
+
+        <div id="4" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">2</span><h2 class="pg-title">L'application</h2></div>
+                <div class="pg-qr">
+                    <img src="qr-20260715-0522.png" alt="QR code Boîte à Cœur">
+                    <div class="pg-qr-labels">
+                        <span>Android</span>
+                        <span>iOS</span>
+                    </div>
+                </div>
+                <p class="pg-caption pg-caption--solo">Scanne le code QR pour télécharger <strong>Boîte à Cœur</strong>, puis crée ton compte (prénom requis) pour lier ta boîte.</p>
+            </div>
+            <span>4</span>
+        </div>
+        <div id="21" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">16</span><h2 class="pg-title">Informations</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="16.png" alt="Infos"></div>
+                    <p class="pg-caption">Appui long → <strong>Informations</strong> : n° de série, version, adresse MAC.</p>
+                </div>
+            </div>
+            <span>21</span>
+        </div>
+
+        <div id="6" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">4</span><h2 class="pg-title">Premiers pas</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="4.png" alt="First setup"></div>
+                    <p class="pg-caption">Suis les écrans de <strong>bienvenue</strong> jusqu'à l'étape Wi-Fi.</p>
+                </div>
+            </div>
+            <span>6</span>
+        </div>
+        <div id="19" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">14</span><h2 class="pg-title">Test internet</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="14.png" alt="WiFi test"></div>
+                    <p class="pg-caption">Appui long → Paramètres → WIFI → <strong>Tester</strong>. Vérifie l'accès au serveur.</p>
+                </div>
+            </div>
+            <span>19</span>
+        </div>
+
+        <div id="8" class="row">
+            <div class="content pg pg--app-lg">
+                <div class="pg-head"><span class="pg-step">6</span><h2 class="pg-title">Wi-Fi via l'app</h2></div>
+                <div class="pg-side">
+                    <div class="pg-shot pg-shot--app"><img src="6.png" alt="BLE WiFi"></div>
+                    <p class="pg-caption">Sélectionne ton réseau et saisis le mot de passe. La boîte le reçoit par Bluetooth.</p>
+                </div>
+            </div>
+            <span>8</span>
+        </div>
+        <div id="17" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">12</span><h2 class="pg-title">Réglages Wi-Fi</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="12.png" alt="WiFi settings"></div>
+                    <p class="pg-caption">Appui long → Paramètres → <strong>Wi-Fi</strong> : voir le réseau actif et le déconnecter.</p>
+                </div>
+            </div>
+            <span>17</span>
+        </div>
+
+        <div id="10" class="row">
+            <div class="content pg pg--app-lg">
+                <div class="pg-head"><span class="pg-step">9</span><h2 class="pg-title">Nommer la boîte</h2></div>
+                <div class="pg-side">
+                    <div class="pg-shot pg-shot--app"><img src="9.png" alt="Alias"></div>
+                    <p class="pg-caption">Dans <strong>Contacts</strong>, personnalise le nom (ex. « Mon amour »). Visible de ton côté seulement.</p>
+                </div>
+            </div>
+            <span>10</span>
+        </div>
+        <div id="15" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">10</span><h2 class="pg-title">Au repos</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="10.png" alt="Idle"></div>
+                    <p class="pg-caption">Connectée, la boîte affiche l'<strong>heure</strong> et attend les messages.</p>
+                </div>
+            </div>
+            <span>15</span>
+        </div>
+
+        <div id="12" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">♡</span><h2 class="pg-title">Nouveau message</h2></div>
+                <div class="pg-stack">
+                    <div class="pg-shot pg-shot--device"><img src="12b.png" alt="New message"></div>
+                    <p class="pg-caption">À la réception, l'écran <strong>Nouveau message</strong> s'affiche (ou « éphémère »).</p>
+                </div>
+            </div>
+            <span>12</span>
+        </div>
+        <div id="13" class="row">
+            <div class="content pg">
+                <div class="pg-head"><span class="pg-step">♡</span><h2 class="pg-title">Lire un message</h2></div>
+                <p class="pg-caption pg-caption--solo"><strong>Appui court</strong> sur le bouton pour ouvrir le message. Fermeture automatique après lecture.</p>
+                <div class="pg-legend">
+                    <span><i class="dot-short"></i> Appui court</span>
+                </div>
+            </div>
+            <span>13</span>
+        </div>
+    </div>
+</body>
+</html>
