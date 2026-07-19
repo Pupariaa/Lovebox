@@ -1,4 +1,4 @@
-# Deployment checklist — boite-a-coeur.techalchemy.fr
+# Deployment checklist — boite-a-coeur.fr
 
 ## 1. MariaDB 10.6 (Plesk)
 
@@ -24,13 +24,13 @@ Create `httpdocs/boiteacoeur/.env` from [`.env.example`](backend/.env.example):
 
 - `DB_PASSWORD` — use server credentials (rotate if exposed in chat)
 - `JWT_SECRET` — random 64+ chars
-- `APP_URL=https://boite-a-coeur.techalchemy.fr`
+- `APP_URL=https://boite-a-coeur.fr`
 
 ## 4. Plesk Apache
 
 **Critical:** the subdomain must not serve the Plesk default page.
 
-1. Plesk → **Websites & Domains** → `boite-a-coeur.techalchemy.fr`
+1. Plesk → **Websites & Domains** → `boite-a-coeur.fr`
 2. **Hosting Settings** → Document root: `httpdocs/boiteacoeur` (repo bootstrap via root `index.php`)
    - Alternative: `httpdocs/boiteacoeur/public` → then sim is `/sim/` (no `/public/` prefix)
 3. PHP **8.1+** FPM enabled for this vhost
@@ -48,7 +48,7 @@ OTA env (filesystem path, not URL):
 
 ```env
 OTA_STORAGE_PATH=
-OTA_PUBLIC_URL=https://boite-a-coeur.techalchemy.fr
+OTA_PUBLIC_URL=https://boite-a-coeur.fr
 OTA_ADMIN_KEY=<random-secret>
 ```
 
@@ -59,7 +59,7 @@ Admin OTA UI (`/public/updates/`) and API routes `/api/v1/updates/*` require hea
 4. After upload, verify:
 
 ```bash
-curl https://boite-a-coeur.techalchemy.fr/health
+curl https://boite-a-coeur.fr/health
 ```
 
 Expected: `{"ok":true,"service":"boite-a-coeur-api"}`
@@ -69,11 +69,11 @@ If you still see the Plesk default page, the document root is wrong or files wer
 ## 5. Smoke tests
 
 ```bash
-curl -X POST https://boite-a-coeur.techalchemy.fr/api/v1/auth/register \
+curl -X POST https://boite-a-coeur.fr/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"test@example.com","password":"password123"}'
 
-curl https://boite-a-coeur.techalchemy.fr/invite/test-token
+curl https://boite-a-coeur.fr/invite/test-token
 ```
 
 ## 6. Firmware
