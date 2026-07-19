@@ -6,7 +6,7 @@ import { useRouter } from "expo-router";
 
 import { AppText, Button, Card, Screen, TextField } from "@/components/ui";
 
-import { useAppStore } from "@/store/appStore";
+import { useAppStore, useLoading } from "@/store/appStore";
 
 import { spacing } from "@/theme/theme";
 
@@ -20,7 +20,7 @@ export default function ProfileScreen() {
 
   const updateUserProfile = useAppStore((s) => s.updateUserProfile);
 
-  const loading = useAppStore((s) => s.loading);
+  const loading = useLoading("profile");
 
 
 
