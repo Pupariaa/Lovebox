@@ -7,12 +7,15 @@ namespace Bac\Services;
 use Bac\Repositories\DeviceRepository;
 use Bac\Repositories\MessageRepository;
 use Bac\Repositories\PairingRepository;
+use Bac\Support\AttemptLimiter;
 use PDO;
 
 final class PairingService
 {
     private const CODE_TTL_SEC = 900;
     private const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    private const ACCEPT_MAX_ATTEMPTS = 6;
+    private const ACCEPT_WINDOW_SECONDS = 900;
 
     public function __construct(
         private PairingRepository $pairings,
@@ -43,14 +46,21 @@ final class PairingService
 
     public function acceptCode(int $userId, string $rawCode, ?int $fromDeviceId = null): array
     {
+        $lockKey = (string) $userId;
+        if (AttemptLimiter::tooMany('pairing-accept', $lockKey, self::ACCEPT_MAX_ATTEMPTS, self::ACCEPT_WINDOW_SECONDS)) {
+            throw new \InvalidArgumentException('too many attempts, try again later');
+        }
         $code = $this->normalizeCode($rawCode);
         if ($code === '') {
+            AttemptLimiter::hit('pairing-accept', $lockKey, self::ACCEPT_WINDOW_SECONDS);
             throw new \InvalidArgumentException('invalid code');
         }
         $entry = $this->pairings->findValidCode($code);
         if (!$entry) {
+            AttemptLimiter::hit('pairing-accept', $lockKey, self::ACCEPT_WINDOW_SECONDS);
             throw new \InvalidArgumentException('invalid or expired code');
         }
+        AttemptLimiter::reset('pairing-accept', $lockKey);
         $ownerId = (int) $entry['owner_user_id'];
         if ($ownerId === $userId) {
             throw new \InvalidArgumentException('cannot link to yourself');
