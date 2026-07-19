@@ -38,7 +38,7 @@ final class UserRepository
         $stmt->execute([
             'email' => strtolower(trim($email)),
             'hash' => $passwordHash,
-            'token' => $verifyToken,
+            'token' => TokenUtil::hashToken($verifyToken),
             'first' => $firstName !== null && $firstName !== '' ? $firstName : null,
         ]);
         return (int) $this->pdo->lastInsertId();
@@ -49,7 +49,7 @@ final class UserRepository
         $stmt = $this->pdo->prepare(
             'UPDATE users SET email_verified_at = NOW(), email_verify_token = NULL WHERE email_verify_token = :token'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute(['token' => TokenUtil::hashToken($token)]);
         return $stmt->rowCount() > 0;
     }
 
@@ -58,7 +58,7 @@ final class UserRepository
         $stmt = $this->pdo->prepare(
             'UPDATE users SET password_reset_token = :token, password_reset_expires_at = :exp WHERE id = :id'
         );
-        $stmt->execute(['token' => $token, 'exp' => $expiresAt, 'id' => $userId]);
+        $stmt->execute(['token' => TokenUtil::hashToken($token), 'exp' => $expiresAt, 'id' => $userId]);
     }
 
     public function findByPasswordResetToken(string $token): ?array
@@ -66,7 +66,7 @@ final class UserRepository
         $stmt = $this->pdo->prepare(
             'SELECT * FROM users WHERE password_reset_token = :token AND password_reset_expires_at > NOW() LIMIT 1'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute(['token' => TokenUtil::hashToken($token)]);
         $row = $stmt->fetch();
         return $row ?: null;
     }
@@ -111,11 +111,23 @@ final class UserRepository
         $stmt->execute(['hash' => $tokenHash]);
     }
 
+    private const UPDATABLE_COLUMNS = [
+        'first_name',
+        'last_name',
+        'locale',
+        'password_hash',
+        'password_set_at',
+        'email_verified_at',
+    ];
+
     public function update(int $userId, array $fields): void
     {
         $sets = [];
         $params = ['id' => $userId];
         foreach ($fields as $key => $value) {
+            if (!in_array($key, self::UPDATABLE_COLUMNS, true)) {
+                throw new \InvalidArgumentException('column not updatable: ' . $key);
+            }
             $sets[] = "$key = :$key";
             $params[$key] = $value;
         }
@@ -194,7 +206,7 @@ final class UserRepository
         );
         $stmt->execute([
             'email' => strtolower(trim($email)),
-            'token' => $token,
+            'token' => TokenUtil::hashToken($token),
             'id' => $userId,
         ]);
     }
@@ -204,7 +216,7 @@ final class UserRepository
         $stmt = $this->pdo->prepare(
             'UPDATE users SET contact_email_verified_at = NOW(), contact_email_verify_token = NULL WHERE contact_email_verify_token = :token'
         );
-        $stmt->execute(['token' => $token]);
+        $stmt->execute(['token' => TokenUtil::hashToken($token)]);
         return $stmt->rowCount() > 0;
     }
 }
