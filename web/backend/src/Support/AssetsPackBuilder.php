@@ -7,6 +7,7 @@ namespace Bac\Support;
 final class AssetsPackBuilder
 {
     private const MAGIC = 'BACA';
+    private const MANIFEST_MAGIC = 'BACX';
 
     public static function buildFromAssetsDirectory(string $assetsDir, string $outputPath): array
     {
@@ -26,6 +27,11 @@ final class AssetsPackBuilder
             $full = str_replace('\\', '/', $file->getPathname());
             $rel = substr($full, strlen($assetsDir) + 1);
             $path = '/assets/' . $rel;
+            // Skip control dotfiles (.manifest, .ok) that may be present when packing
+            // from an on-device data directory; they are managed separately by the device.
+            if (str_starts_with(basename($path), '.')) {
+                continue;
+            }
             if (!self::isSafeAssetPath($path)) {
                 throw new \InvalidArgumentException('unsafe asset path: ' . $path);
             }
@@ -38,9 +44,15 @@ final class AssetsPackBuilder
         if (!$fp) {
             throw new \RuntimeException('cannot write assets pack');
         }
+        // 12-byte header: magic(4) + format version(4) + file count(4).
         fwrite($fp, self::MAGIC);
         fwrite($fp, pack('V', 1));
         fwrite($fp, pack('V', count($files)));
+        // Track each record's byte offset (start of its pathLen field) and data sha so a
+        // sidecar manifest lets the device diff-sync: records are written back-to-back, so
+        // a run of consecutive changed files is one contiguous byte range in the pack.
+        $offset = 12;
+        $manifest = [];
         foreach ($files as $entry) {
             $path = $entry['path'];
             $data = file_get_contents($entry['full']);
@@ -52,6 +64,13 @@ final class AssetsPackBuilder
             fwrite($fp, $path);
             fwrite($fp, pack('V', strlen($data)));
             fwrite($fp, $data);
+            $manifest[] = [
+                'path' => $path,
+                'size' => strlen($data),
+                'offset' => $offset,
+                'sha' => hash('sha256', $data, true),
+            ];
+            $offset += 2 + strlen($path) + 4 + strlen($data);
         }
         fclose($fp);
 
@@ -61,11 +80,42 @@ final class AssetsPackBuilder
             throw new \RuntimeException('assets pack hash failed');
         }
 
+        $manifestPath = self::manifestPathFor($outputPath);
+        self::writeManifest($manifestPath, $manifest);
+
         return [
             'file_count' => count($files),
             'size' => $size,
             'sha256' => $sha,
+            'manifest_file' => basename($manifestPath),
         ];
+    }
+
+    public static function manifestPathFor(string $packPath): string
+    {
+        if (str_ends_with($packPath, '.bacassets')) {
+            return substr($packPath, 0, -strlen('.bacassets')) . '.manifest';
+        }
+        return $packPath . '.manifest';
+    }
+
+    private static function writeManifest(string $manifestPath, array $entries): void
+    {
+        $fp = fopen($manifestPath, 'wb');
+        if (!$fp) {
+            throw new \RuntimeException('cannot write assets manifest');
+        }
+        fwrite($fp, self::MANIFEST_MAGIC);
+        fwrite($fp, pack('V', 1));
+        fwrite($fp, pack('V', count($entries)));
+        foreach ($entries as $e) {
+            fwrite($fp, pack('v', strlen($e['path'])));
+            fwrite($fp, $e['path']);
+            fwrite($fp, pack('V', $e['size']));
+            fwrite($fp, pack('V', $e['offset']));
+            fwrite($fp, $e['sha']);
+        }
+        fclose($fp);
     }
 
     public static function buildFromZip(string $zipPath, string $outputPath): array
