@@ -148,6 +148,29 @@ final class DeviceRepository
         return $stmt->rowCount() > 0;
     }
 
+    // Revokes the current device secret. The box re-obtains a fresh secret on its next registration.
+    public function revokeSecret(int $deviceId): void
+    {
+        $stmt = $this->pdo->prepare('UPDATE devices SET secret_hash = NULL WHERE id = :id');
+        $stmt->execute(['id' => $deviceId]);
+    }
+
+    public function deleteOwned(int $deviceId, int $userId): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'DELETE FROM devices WHERE id = :id AND owner_user_id = :uid'
+        );
+        $stmt->execute(['id' => $deviceId, 'uid' => $userId]);
+        return $stmt->rowCount() > 0;
+    }
+
+    public function deleteById(int $deviceId): bool
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM devices WHERE id = :id');
+        $stmt->execute(['id' => $deviceId]);
+        return $stmt->rowCount() > 0;
+    }
+
     public function touchHeartbeat(int $id, ?string $firmwareVersion = null): void
     {
         if ($firmwareVersion !== null) {
@@ -159,6 +182,113 @@ final class DeviceRepository
         }
         $stmt = $this->pdo->prepare('UPDATE devices SET last_seen_at = NOW() WHERE id = :id');
         $stmt->execute(['id' => $id]);
+    }
+
+    public function updateTelemetry(int $id, array $t): void
+    {
+        $sets = ['last_seen_at = NOW()', 'telemetry_at = NOW()'];
+        $params = ['id' => $id];
+        $allowed = [
+            'firmware_version' => 'firmware_version',
+            'rssi' => 'rssi',
+            'free_heap' => 'free_heap',
+            'uptime_s' => 'uptime_s',
+            'ip_addr' => 'ip_addr',
+            'mac_addr' => 'mac_addr',
+        ];
+        foreach ($allowed as $key => $column) {
+            if (array_key_exists($key, $t) && $t[$key] !== null) {
+                $sets[] = "$column = :$key";
+                $params[$key] = $t[$key];
+            }
+        }
+        $sql = 'UPDATE devices SET ' . implode(', ', $sets) . ' WHERE id = :id';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+    }
+
+    public function listAll(array $filters = []): array
+    {
+        $where = [];
+        $params = [];
+        if (!empty($filters['q'])) {
+            $where[] = '(serial_number LIKE :q OR device_name LIKE :q OR display_name LIKE :q OR uuid LIKE :q)';
+            $params['q'] = '%' . $filters['q'] . '%';
+        }
+        if (!empty($filters['version'])) {
+            $where[] = 'firmware_version = :version';
+            $params['version'] = $filters['version'];
+        }
+        if (isset($filters['region']) && $filters['region'] !== '') {
+            $where[] = 'COALESCE(region_override, region) = :region';
+            $params['region'] = $filters['region'];
+        }
+        if (isset($filters['claimed']) && $filters['claimed'] !== null) {
+            $where[] = $filters['claimed']
+                ? 'owner_user_id IS NOT NULL'
+                : 'owner_user_id IS NULL';
+        }
+        $sql = 'SELECT id, uuid, serial_number, device_name, display_name, owner_user_id,
+                       region, region_override, firmware_version, rssi, free_heap, uptime_s,
+                       ip_addr, mac_addr, telemetry_at, last_seen_at, created_at
+                FROM devices';
+        if ($where !== []) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY last_seen_at IS NULL, last_seen_at DESC, id DESC';
+        $stmt = $this->pdo->prepare($sql);
+        $stmt->execute($params);
+        return $stmt->fetchAll();
+    }
+
+    public function distinctVersions(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT firmware_version AS version, COUNT(*) AS total
+             FROM devices
+             WHERE firmware_version IS NOT NULL AND firmware_version <> ''
+             GROUP BY firmware_version
+             ORDER BY total DESC, firmware_version DESC"
+        );
+        return $stmt->fetchAll();
+    }
+
+    public function distinctRegions(): array
+    {
+        $stmt = $this->pdo->query(
+            "SELECT COALESCE(region_override, region) AS region, COUNT(*) AS total
+             FROM devices
+             WHERE COALESCE(region_override, region) IS NOT NULL
+               AND COALESCE(region_override, region) <> ''
+             GROUP BY COALESCE(region_override, region)
+             ORDER BY total DESC"
+        );
+        return $stmt->fetchAll();
+    }
+
+    public function fleetCounts(int $onlineThresholdSeconds = 120): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT
+                COUNT(*) AS total,
+                SUM(secret_hash IS NOT NULL) AS registered,
+                SUM(owner_user_id IS NOT NULL) AS claimed,
+                SUM(owner_user_id IS NULL) AS unclaimed,
+                SUM(last_seen_at IS NOT NULL AND last_seen_at >= DATE_SUB(NOW(), INTERVAL :sec SECOND)) AS online
+             FROM devices"
+        );
+        $stmt->execute(['sec' => $onlineThresholdSeconds]);
+        $row = $stmt->fetch() ?: [];
+        $total = (int) ($row['total'] ?? 0);
+        $online = (int) ($row['online'] ?? 0);
+        return [
+            'total' => $total,
+            'registered' => (int) ($row['registered'] ?? 0),
+            'claimed' => (int) ($row['claimed'] ?? 0),
+            'unclaimed' => (int) ($row['unclaimed'] ?? 0),
+            'online' => $online,
+            'offline' => max(0, $total - $online),
+        ];
     }
 
     public function listAllWithSecret(): array
