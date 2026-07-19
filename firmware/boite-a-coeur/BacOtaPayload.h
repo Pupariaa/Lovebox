@@ -25,6 +25,35 @@ struct BacOtaPayload {
         dst[dstLen - 1] = 0;
     }
 
+    static void parseSemver(const char *v, uint32_t &major, uint32_t &minor, uint32_t &patch) {
+        major = minor = patch = 0;
+        if (!v) return;
+        uint32_t *slots[3] = {&major, &minor, &patch};
+        int slot = 0;
+        const char *p = v;
+        while (*p && slot < 3) {
+            if (*p >= '0' && *p <= '9') {
+                *slots[slot] = *slots[slot] * 10 + (uint32_t)(*p - '0');
+                p++;
+            } else if (*p == '.') {
+                slot++;
+                p++;
+            } else {
+                break;
+            }
+        }
+    }
+
+    static int compareSemver(const char *a, const char *b) {
+        uint32_t am, an, ap, bm, bn, bp;
+        parseSemver(a, am, an, ap);
+        parseSemver(b, bm, bn, bp);
+        if (am != bm) return am < bm ? -1 : 1;
+        if (an != bn) return an < bn ? -1 : 1;
+        if (ap != bp) return ap < bp ? -1 : 1;
+        return 0;
+    }
+
     static bool parseFromJson(const String &json, BacOtaPayload &out) {
         memset(&out, 0, sizeof(out));
         String version = BacCloudClient::extractJsonString(json, "version");
