@@ -25,15 +25,21 @@ export default function ContactsScreen() {
   const pairingCode = useAppStore((s) => s.pairingCode);
   const pairingCodeCopied = useAppStore((s) => s.pairingCodeCopied);
   const linkedTargets = useAppStore((s) => s.linkedTargets);
+  const devices = useAppStore((s) => s.devices);
+  const myDevice = useAppStore((s) => s.myDevice);
+  const selectDevice = useAppStore((s) => s.selectDevice);
   const selectedTarget = useAppStore((s) => s.selectedTarget);
   const generatePairingCode = useAppStore((s) => s.generatePairingCode);
   const markPairingCodeCopied = useAppStore((s) => s.markPairingCodeCopied);
   const acceptPairingCode = useAppStore((s) => s.acceptPairingCode);
   const unlinkTarget = useAppStore((s) => s.unlinkTarget);
+  const setTargetAlias = useAppStore((s) => s.setTargetAlias);
   const selectTarget = useAppStore((s) => s.selectTarget);
   const refreshState = useAppStore((s) => s.refreshState);
 
   const [code, setCode] = useState("");
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [aliasDraft, setAliasDraft] = useState("");
 
   useFocusEffect(
     useCallback(() => {
@@ -53,6 +59,16 @@ export default function ContactsScreen() {
     setCode("");
   };
 
+  const startEditAlias = (pairingId: number, current: string) => {
+    setEditingId(pairingId);
+    setAliasDraft(current);
+  };
+
+  const saveAlias = async (pairingId: number) => {
+    const ok = await setTargetAlias(pairingId, aliasDraft.trim() || null);
+    if (ok) setEditingId(null);
+  };
+
   return (
     <Screen title="Contacts">
       <ScrollView contentContainerStyle={styles.content}>
@@ -61,6 +77,28 @@ export default function ContactsScreen() {
           <AppText variant="bodyMedium" muted style={styles.paragraph}>
             Génère un code et transmets-le à la personne qui pourra t&apos;écrire.
           </AppText>
+          {devices.length > 1 ? (
+            <View style={styles.deviceList}>
+              <AppText variant="caption" muted>
+                Code pour la boîte :
+              </AppText>
+              {devices.map((device) => (
+                <Pressable
+                  key={device.id}
+                  onPress={() => selectDevice(device.id)}
+                  style={[
+                    styles.deviceOption,
+                    myDevice?.id === device.id && styles.deviceOptionActive,
+                  ]}
+                >
+                  <AppText variant="bodyMedium">{device.display_name || device.device_name}</AppText>
+                  {myDevice?.id === device.id ? (
+                    <Ionicons name="checkmark" size={18} color={colors.rosePrimary} />
+                  ) : null}
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
           {pairingCode ? (
             <View style={styles.codeBox}>
               <AppText variant="headlineLarge" color={colors.rosePrimary} style={styles.codeText}>
@@ -119,6 +157,7 @@ export default function ContactsScreen() {
         ) : (
           linkedTargets.map((target) => {
             const active = selectedTarget?.device_id === target.device_id;
+            const editing = editingId === target.pairing_id;
             return (
               <Pressable key={target.pairing_id} onPress={() => selectTarget(target)}>
                 <Card highlight={active}>
@@ -140,12 +179,42 @@ export default function ContactsScreen() {
                     ) : null}
                     <Pressable
                       hitSlop={10}
+                      onPress={() => startEditAlias(target.pairing_id, target.alias ?? "")}
+                      style={styles.removeButton}
+                    >
+                      <Ionicons name="pencil" size={16} color={colors.textMuted} />
+                    </Pressable>
+                    <Pressable
+                      hitSlop={10}
                       onPress={() => unlinkTarget(target.pairing_id)}
                       style={styles.removeButton}
                     >
                       <Ionicons name="close" size={18} color={colors.textMuted} />
                     </Pressable>
                   </View>
+                  {editing ? (
+                    <View style={styles.aliasEditor}>
+                      <TextField
+                        value={aliasDraft}
+                        onChangeText={setAliasDraft}
+                        placeholder="Nom personnalisé (ex : Mon amour)"
+                        autoCapitalize="sentences"
+                      />
+                      <View style={styles.aliasActions}>
+                        <Button
+                          label="Annuler"
+                          variant="secondary"
+                          fullWidth={false}
+                          onPress={() => setEditingId(null)}
+                        />
+                        <Button
+                          label="Enregistrer"
+                          fullWidth={false}
+                          onPress={() => saveAlias(target.pairing_id)}
+                        />
+                      </View>
+                    </View>
+                  ) : null}
                 </Card>
               </Pressable>
             );
@@ -204,5 +273,31 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: "center",
     justifyContent: "center",
+  },
+  aliasEditor: {
+    marginTop: spacing.md,
+    gap: spacing.md,
+  },
+  aliasActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    gap: spacing.md,
+  },
+  deviceList: {
+    gap: spacing.sm,
+    marginBottom: spacing.lg,
+  },
+  deviceOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: spacing.md,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    backgroundColor: colors.surfaceDark,
+  },
+  deviceOptionActive: {
+    borderColor: colors.rosePrimary,
   },
 });
