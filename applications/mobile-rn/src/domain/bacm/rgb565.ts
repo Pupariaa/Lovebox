@@ -44,3 +44,49 @@ export function rgba8888To565(rgba: Uint8Array, pixelCount: number): Uint16Array
   }
   return out;
 }
+
+// Floyd-Steinberg dithered quantization of an opaque RGBA buffer to RGB565. Used for full-frame
+// photo backgrounds to remove 16-bit banding on gradients.
+export function ditherRgba8888To565(
+  rgba: Uint8Array,
+  width: number,
+  height: number,
+): Uint16Array {
+  const n = width * height;
+  const out = new Uint16Array(n);
+  const rBuf = new Float32Array(n);
+  const gBuf = new Float32Array(n);
+  const bBuf = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    const o = i * 4;
+    rBuf[i] = rgba[o];
+    gBuf[i] = rgba[o + 1];
+    bBuf[i] = rgba[o + 2];
+  }
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : v);
+  const diffuse = (buf: Float32Array, idx: number, err: number, x: number) => {
+    if (x + 1 < width) buf[idx + 1] += (err * 7) / 16;
+    const below = idx + width;
+    if (below < n) {
+      if (x > 0) buf[below - 1] += (err * 3) / 16;
+      buf[below] += (err * 5) / 16;
+      if (x + 1 < width) buf[below + 1] += (err * 1) / 16;
+    }
+  };
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = y * width + x;
+      const r = clamp(rBuf[idx]);
+      const g = clamp(gBuf[idx]);
+      const b = clamp(bBuf[idx]);
+      const r5 = Math.round((r * 31) / 255);
+      const g6 = Math.round((g * 63) / 255);
+      const b5 = Math.round((b * 31) / 255);
+      out[idx] = ((r5 << 11) | (g6 << 5) | b5) & 0xffff;
+      diffuse(rBuf, idx, r - ((r5 << 3) | (r5 >> 2)), x);
+      diffuse(gBuf, idx, g - ((g6 << 2) | (g6 >> 4)), x);
+      diffuse(bBuf, idx, b - ((b5 << 3) | (b5 >> 2)), x);
+    }
+  }
+  return out;
+}
