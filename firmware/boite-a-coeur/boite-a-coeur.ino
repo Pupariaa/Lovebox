@@ -1,15 +1,16 @@
-#include <WiFi.h>
 #include "Projet.h"
 #include "Projet_setup.h"
+#include <WiFi.h>
 
 #if defined(ESP32)
-#include "LoveboxFramePacer.h"
-#include "BacScreenCache.h"
 #include "BacApp.h"
 #include "BacDebug.h"
-#include "BacSysInfo.h"
+#include "BacScreenCache.h"
 #include "BacSerialConsole.h"
+#include "BacSysInfo.h"
 #include "BacTouch.h"
+#include "BacUsbIdentity.h"
+#include "LoveboxFramePacer.h"
 #include <esp_task_wdt.h>
 #endif
 
@@ -28,59 +29,65 @@ static LoveboxFramePacer framePacer;
 static BacSerialConsole serialConsole;
 
 void setup() {
-    Serial.begin(115200);
+#if defined(ESP32)
+  BacUsbIdentity::begin();
+#endif
+  Serial.begin(115200);
 
 #if defined(ESP32)
-    esp_task_wdt_config_t wdt = {};
-    wdt.timeout_ms = 60000;
-    wdt.trigger_panic = true;
-    esp_task_wdt_reconfigure(&wdt);
-    touch.begin(TOUCH_PIN);
-    serialConsole.begin();
+  esp_task_wdt_config_t wdt = {};
+  wdt.timeout_ms = 60000;
+  wdt.trigger_panic = true;
+  esp_task_wdt_reconfigure(&wdt);
+  touch.begin(TOUCH_PIN);
+  serialConsole.begin();
 #endif
 
-    projet::initSpiBus();
+  projet::initSpiBus();
 
-    BufferOptions buffer;
-    buffer.mode = BufferMode::Full;
-    buffer.memory = BufferMemory::Auto;
+  BufferOptions buffer;
+  buffer.mode = BufferMode::Full;
+  buffer.memory = BufferMemory::Auto;
 
-    if (!display.begin(projet::displayPins(), projet::displayOptions(), buffer, &SPI)) {
-        BacDebug::reply("display init failed");
-        return;
-    }
+  if (!display.begin(projet::displayPins(), projet::displayOptions(), buffer,
+                     &SPI)) {
+    BacDebug::reply("display init failed");
+    return;
+  }
 
-    projet::build(ui);
-    ui.setTransition(Transition::Fade, 200);
+  projet::build(ui);
+  ui.setTransition(Transition::Fade, 200);
 
-    if (!projet::initStorage()) {
-        BacDebug::reply("warning: volume assets unavailable");
-    }
+  if (!projet::initStorage()) {
+    BacDebug::reply("warning: volume assets unavailable");
+  }
 
-    ui.begin();
+  ui.begin();
 
-    screenCache.begin(ui, &projet::screen_scr_mqxozray1);
-    app.begin(ui, screenCache);
-    app.onCacheReady();
-    projet::attachInput(ui);
-    framePacer.begin(TARGET_FPS);
+  screenCache.begin(ui, &projet::screen_scr_mqxozray1);
+  app.begin(ui, screenCache);
+  app.onCacheReady();
+  projet::attachInput(ui);
+  framePacer.begin(TARGET_FPS);
 }
 
 void loop() {
 #if defined(ESP32)
-    serialConsole.poll(app);
-    BacSysInfo::tick();
-    uint32_t touchVal = touch.read();
-    app.tick(touchVal);
-#else
-    app.tick(0);
-#endif
-
+  serialConsole.poll(app);
+  BacSysInfo::tick();
+  uint32_t touchVal = touch.read();
+  app.tick(touchVal);
+  if (app.shouldUpdateUi()) {
     ui.update();
-#if defined(ESP32)
     app.drawMessageOverlay(display);
-#endif
     projet::update();
-
-    framePacer.wait();
+  }
+  framePacer.setFps(app.targetFps() == 0 ? 1 : app.targetFps());
+  framePacer.wait();
+#else
+  app.tick(0);
+  ui.update();
+  projet::update();
+  framePacer.wait();
+#endif
 }
