@@ -2,13 +2,16 @@
 
 declare(strict_types=1);
 
+use Bac\Middleware\AdminApiMiddleware;
 use Bac\Middleware\DeviceAuthMiddleware;
 use Bac\Middleware\JwtAuthMiddleware;
 use Bac\Middleware\OtaAdminMiddleware;
+use Bac\Repositories\DeletionRequestRepository;
 use Bac\Repositories\DeviceCommandRepository;
 use Bac\Repositories\DeviceRepository;
 use Bac\Repositories\FirmwareReleaseRepository;
 use Bac\Repositories\MessageRepository;
+use Bac\Repositories\OAuthCodeRepository;
 use Bac\Repositories\PairingRepository;
 use Bac\Repositories\UserRepository;
 use Bac\Services\AppleClientSecret;
@@ -20,6 +23,7 @@ use Bac\Services\JwtService;
 use Bac\Services\MessageService;
 use Bac\Services\OtaService;
 use Bac\Services\PairingService;
+use Bac\Services\UserDataRightsService;
 use Psr\Container\ContainerInterface;
 use function DI\autowire;
 use function DI\create;
@@ -67,11 +71,15 @@ return [
     FirmwareReleaseRepository::class => autowire(),
     PairingRepository::class => autowire(),
     MessageRepository::class => autowire(),
+    OAuthCodeRepository::class => autowire(),
     AppleClientSecret::class => autowire(),
     OAuthService::class => autowire(),
     JwtAuthMiddleware::class => autowire(),
     DeviceAuthMiddleware::class => autowire(),
     OtaAdminMiddleware::class => function (ContainerInterface $c): OtaAdminMiddleware {
         return new OtaAdminMiddleware($c->get('settings'));
+    },
+    AdminApiMiddleware::class => function (ContainerInterface $c): AdminApiMiddleware {
+        return new AdminApiMiddleware($c->get('settings'));
     },
 ];
