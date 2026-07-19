@@ -34,6 +34,13 @@ struct BacSha256 {
         return true;
     }
 
+    bool finishRaw(uint8_t out[32]) {
+        if (!active || !out) return false;
+        if (mbedtls_sha256_finish(&ctx, out) != 0) return false;
+        active = false;
+        return true;
+    }
+
     static bool equalsHex(const char *expected, const char *got) {
         if (!expected || !got) return false;
         if (strlen(expected) != 64 || strlen(got) != 64) return false;
@@ -54,6 +61,7 @@ struct BacSha256 {
     void begin() {}
     void update(const uint8_t *, size_t) {}
     bool finishHex(char *) { return false; }
+    bool finishRaw(unsigned char *) { return false; }
     static bool equalsHex(const char *, const char *) { return false; }
 };
 
