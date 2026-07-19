@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Boite a coeur",
+    "name": "Boîte à cœur",
     "slug": "boite-a-coeur",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,9 +12,16 @@
       "supportsTablet": true,
       "bundleIdentifier": "fr.techalchemy.boiteacoeur",
       "infoPlist": {
-        "NSBluetoothAlwaysUsageDescription": "L'application utilise le Bluetooth pour configurer ta boite a coeur.",
-        "NSBluetoothPeripheralUsageDescription": "L'application utilise le Bluetooth pour configurer ta boite a coeur.",
-        "NSPhotoLibraryUsageDescription": "L'application accede a tes photos pour les ajouter a tes messages."
+        "NSBluetoothAlwaysUsageDescription": "L'application utilise le Bluetooth pour configurer ta boîte à cœur.",
+        "NSBluetoothPeripheralUsageDescription": "L'application utilise le Bluetooth pour configurer ta boîte à cœur.",
+        "NSPhotoLibraryUsageDescription": "L'application accède à tes photos pour les ajouter à tes messages.",
+        "NSCameraUsageDescription": "L'application utilise la caméra pour scanner le QR code WiFi de ta box.",
+        "NSLocationWhenInUseUsageDescription": "L'application utilise ta position pour détecter le nom du réseau WiFi connecté.",
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "usesAppleSignIn": true,
+      "entitlements": {
+        "com.apple.developer.networking.wifi-info": true
       }
     },
     "android": {
@@ -29,8 +36,10 @@
         "android.permission.BLUETOOTH_SCAN",
         "android.permission.BLUETOOTH_CONNECT",
         "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.BLUETOOTH",
         "android.permission.BLUETOOTH_ADMIN",
+        "android.permission.CAMERA",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -55,7 +64,7 @@
           "modes": [
             "central"
           ],
-          "bluetoothAlwaysPermission": "L'application utilise le Bluetooth pour configurer ta boite a coeur."
+          "bluetoothAlwaysPermission": "L'application utilise le Bluetooth pour configurer ta boîte à cœur."
         }
       ],
       "expo-secure-store",
@@ -63,9 +72,26 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "L'application accede a tes photos pour les ajouter a tes messages."
+          "photosPermission": "L'application accède à tes photos pour les ajouter à tes messages."
         }
-      ]
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "L'application utilise la caméra pour scanner le QR code WiFi de ta box.",
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "L'application utilise ta position pour détecter le nom du réseau WiFi connecté."
+        }
+      ],
+      "expo-apple-authentication",
+      "expo-image",
+      "expo-status-bar",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,
