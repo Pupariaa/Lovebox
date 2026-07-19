@@ -1,4 +1,4 @@
-import { Component, type ReactNode } from "react";
+import { Component, Fragment, type ErrorInfo, type ReactNode } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { AppText, Button } from "@/components/ui";
 import { mapApiError } from "@/data/api/errors";
@@ -10,17 +10,22 @@ type Props = {
 
 type State = {
   error: Error | null;
+  resetKey: number;
 };
 
 export class AppErrorBoundary extends Component<Props, State> {
-  state: State = { error: null };
+  state: State = { error: null, resetKey: 0 };
 
-  static getDerivedStateFromError(error: Error): State {
+  static getDerivedStateFromError(error: Error): Partial<State> {
     return { error };
   }
 
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("app error boundary caught", error, info.componentStack);
+  }
+
   private reset = () => {
-    this.setState({ error: null });
+    this.setState((prev) => ({ error: null, resetKey: prev.resetKey + 1 }));
   };
 
   render() {
@@ -35,7 +40,7 @@ export class AppErrorBoundary extends Component<Props, State> {
             <AppText variant="caption" muted style={styles.message}>
               {mapApiError(this.state.error.message)}
             </AppText>
-            {this.state.error.stack ? (
+            {__DEV__ && this.state.error.stack ? (
               <AppText variant="caption" muted style={styles.stack}>
                 {this.state.error.stack}
               </AppText>
@@ -45,7 +50,7 @@ export class AppErrorBoundary extends Component<Props, State> {
         </View>
       );
     }
-    return this.props.children;
+    return <Fragment key={this.state.resetKey}>{this.props.children}</Fragment>;
   }
 }
 
