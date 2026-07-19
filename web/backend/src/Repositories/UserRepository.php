@@ -29,15 +29,17 @@ final class UserRepository
         return $row ?: null;
     }
 
-    public function create(string $email, string $passwordHash, string $verifyToken): int
+    public function create(string $email, string $passwordHash, string $verifyToken, ?string $firstName = null): int
     {
         $stmt = $this->pdo->prepare(
-            'INSERT INTO users (email, password_hash, email_verify_token) VALUES (:email, :hash, :token)'
+            'INSERT INTO users (email, password_hash, email_verify_token, first_name, password_set_at)
+             VALUES (:email, :hash, :token, :first, NOW())'
         );
         $stmt->execute([
             'email' => strtolower(trim($email)),
             'hash' => $passwordHash,
             'token' => $verifyToken,
+            'first' => $firstName !== null && $firstName !== '' ? $firstName : null,
         ]);
         return (int) $this->pdo->lastInsertId();
     }
@@ -146,16 +148,17 @@ final class UserRepository
         $stmt->execute(['p' => $provider, 'pid' => $providerUserId, 'uid' => $userId]);
     }
 
-    public function createOAuthUser(string $email, string $provider, string $providerUserId): int
+    public function createOAuthUser(string $email, string $provider, string $providerUserId, ?string $firstName = null): int
     {
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
-                'INSERT INTO users (email, password_hash, email_verified_at) VALUES (:email, :hash, NOW())'
+                'INSERT INTO users (email, password_hash, email_verified_at, first_name) VALUES (:email, :hash, NOW(), :first_name)'
             );
             $stmt->execute([
                 'email' => strtolower(trim($email)),
                 'hash' => password_hash(TokenUtil::randomHex(24), PASSWORD_BCRYPT, ['cost' => 12]),
+                'first_name' => $firstName !== null && $firstName !== '' ? $firstName : null,
             ]);
             $userId = (int) $this->pdo->lastInsertId();
             $this->linkOAuth($userId, $provider, $providerUserId);
@@ -165,5 +168,43 @@ final class UserRepository
             $this->pdo->rollBack();
             throw $e;
         }
+    }
+
+    public function deleteById(int $userId): void
+    {
+        $this->revokeAllRefreshTokens($userId);
+        $stmt = $this->pdo->prepare('DELETE FROM users WHERE id = :id');
+        $stmt->execute(['id' => $userId]);
+    }
+
+    /** @return list<string> */
+    public function listOAuthProviders(int $userId): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT provider FROM oauth_identities WHERE user_id = :id ORDER BY provider ASC'
+        );
+        $stmt->execute(['id' => $userId]);
+        return array_map(static fn (array $row): string => (string) $row['provider'], $stmt->fetchAll());
+    }
+
+    public function setContactEmail(int $userId, string $email, string $token): void
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET contact_email = :email, contact_email_verify_token = :token, contact_email_verified_at = NULL WHERE id = :id'
+        );
+        $stmt->execute([
+            'email' => strtolower(trim($email)),
+            'token' => $token,
+            'id' => $userId,
+        ]);
+    }
+
+    public function verifyContactEmail(string $token): bool
+    {
+        $stmt = $this->pdo->prepare(
+            'UPDATE users SET contact_email_verified_at = NOW(), contact_email_verify_token = NULL WHERE contact_email_verify_token = :token'
+        );
+        $stmt->execute(['token' => $token]);
+        return $stmt->rowCount() > 0;
     }
 }
