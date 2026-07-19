@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin/
+Disallow: /sim/
+Disallow: /updates/
+Disallow: /public/bac-debug/
+
+Sitemap: https://boite-a-coeur.fr/sitemap.xml
