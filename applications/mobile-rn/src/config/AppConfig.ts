@@ -1,5 +1,6 @@
 export const AppConfig = {
   API_BASE: "https://boite-a-coeur.fr",
+  API_TIMEOUT_MS: 45000,
   BLE_SERVICE_UUID: "bac1c201-1fb5-459e-8fcc-c5c9c331914b",
   BLE_WIFI_CHAR_UUID: "bac1c202-36e1-4688-b7f5-ea07361b26a8",
   BLE_WIFI_STATUS_CHAR_UUID: "bac1c203-36e1-4688-b7f5-ea07361b26a8",
