@@ -49,7 +49,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:scheme="https"
-                    android:host="boite-a-coeur.techalchemy.fr"
+                    android:host="boite-a-coeur.fr"
                     android:pathPrefix="/invite" />
             </intent-filter>
         </activity>
