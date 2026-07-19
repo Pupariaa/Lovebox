@@ -55,6 +55,18 @@ final class OAuthController
         }
     }
 
+    public function exchange(Request $request, Response $response): Response
+    {
+        $body = (array) ($request->getParsedBody() ?? []);
+        $code = (string) ($body['code'] ?? ($request->getQueryParams()['code'] ?? ''));
+        try {
+            $tokens = $this->oauth->exchangeCode($code);
+            return JsonResponse::ok($response, $tokens);
+        } catch (\InvalidArgumentException $e) {
+            return JsonResponse::error($response, $e->getMessage(), 400);
+        }
+    }
+
     private function finishOAuth(Request $request, Response $response, array $args): Response
     {
         $provider = (string) ($args['provider'] ?? '');
@@ -62,7 +74,8 @@ final class OAuthController
         $native = OAuthService::decodeNativeRedirect((string) ($params['state'] ?? ''));
         try {
             $tokens = $this->oauth->handleCallback($provider, $params);
-            $query = http_build_query($tokens);
+            $code = $this->oauth->createExchangeCode($tokens);
+            $query = http_build_query(['code' => $code]);
             if ($native !== null) {
                 $separator = str_contains($native, '?') ? '&' : '?';
                 return $response->withHeader('Location', $native . $separator . $query)->withStatus(302);
@@ -77,6 +90,14 @@ final class OAuthController
                 return $response->withHeader('Location', $native . $separator . $query)->withStatus(302);
             }
             return JsonResponse::error($response, $e->getMessage(), 400);
+        } catch (\Throwable $e) {
+            error_log('oauth callback failed: ' . $e->getMessage());
+            if ($native !== null) {
+                $query = http_build_query(['error' => 'server_error']);
+                $separator = str_contains($native, '?') ? '&' : '?';
+                return $response->withHeader('Location', $native . $separator . $query)->withStatus(302);
+            }
+            return JsonResponse::error($response, 'server_error', 500);
         }
     }
 }
