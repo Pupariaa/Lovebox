@@ -1,3 +1,3 @@
 #pragma once
 
-#define BAC_FW_VERSION "1.0.10"
+#define BAC_FW_VERSION "1.0.19"
