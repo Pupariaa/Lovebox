@@ -16,7 +16,7 @@ final class AuthService
     ) {
     }
 
-    public function register(string $email, string $password): array
+    public function register(string $email, string $password, string $firstName = ''): array
     {
         $email = strtolower(trim($email));
         if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
@@ -25,13 +25,23 @@ final class AuthService
         if (strlen($password) < 8) {
             throw new \InvalidArgumentException('password too short');
         }
+        $firstName = trim($firstName);
+        if ($firstName === '') {
+            throw new \InvalidArgumentException('first_name required');
+        }
+        $firstName = mb_substr($firstName, 0, 64);
         if ($this->users->findByEmail($email)) {
             throw new \InvalidArgumentException('email already registered');
         }
         $verifyToken = TokenUtil::randomHex(16);
-        $userId = $this->users->create($email, password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]), $verifyToken);
+        $userId = $this->users->create(
+            $email,
+            password_hash($password, PASSWORD_BCRYPT, ['cost' => 12]),
+            $verifyToken,
+            $firstName
+        );
         $this->email->sendVerification($email, $verifyToken);
-        return $this->issueTokens($userId, $email);
+        return $this->issueTokens($userId, $email, $firstName);
     }
 
     public function login(string $email, string $password): array
@@ -41,7 +51,7 @@ final class AuthService
         if (!$user || !password_verify($password, $user['password_hash'])) {
             throw new \InvalidArgumentException('invalid credentials');
         }
-        return $this->issueTokens((int) $user['id'], $user['email']);
+        return $this->issueTokens((int) $user['id'], $user['email'], $user['first_name'] ?? null);
     }
 
     public function refresh(string $refreshToken): array
@@ -56,7 +66,7 @@ final class AuthService
             throw new \InvalidArgumentException('user not found');
         }
         $this->users->revokeRefreshToken($hash);
-        return $this->issueTokens((int) $user['id'], $user['email']);
+        return $this->issueTokens((int) $user['id'], $user['email'], $user['first_name'] ?? null);
     }
 
     public function logout(string $refreshToken): void
@@ -100,7 +110,7 @@ final class AuthService
         return true;
     }
 
-    private function issueTokens(int $userId, string $email): array
+    private function issueTokens(int $userId, string $email, ?string $firstName = null): array
     {
         $refresh = TokenUtil::randomHex(32);
         $expiresAt = date('Y-m-d H:i:s', time() + $this->jwt->refreshTtl());
@@ -112,6 +122,7 @@ final class AuthService
             'user' => [
                 'id' => $userId,
                 'email' => $email,
+                'first_name' => $firstName,
             ],
         ];
     }
