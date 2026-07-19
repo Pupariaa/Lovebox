@@ -125,7 +125,7 @@ fun SettingsScreen(vm: AppViewModel, onBack: () -> Unit) {
 
             Button(
                 onClick = { vm.updateDeviceSettings(displayName, regionCode) },
-                enabled = !vm.loading && device != null,
+                enabled = !vm.deviceUpdating && device != null,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
             ) {
