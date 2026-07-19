@@ -16,3 +16,12 @@ applications/**/.gradle/
 applications/**/build/
 .vscode/
 applications/**/.idea/
+applications/mobile-rn/play-store-service-account.json
+applications/mobile-rn/*.keystore
+applications/mobile-rn/*.jks
+
+# Local dev and build artifacts (2026-07-19 cleanup)
+applications/mobile-rn/.expo/
+applications/mobile-rn/node_modules/
+**/__pycache__/
+factory/releases/
