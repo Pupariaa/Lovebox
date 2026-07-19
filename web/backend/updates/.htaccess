@@ -1,0 +1,28 @@
+# OTA binaries (firmware.bin, assets.bacassets, assets.manifest) are downloaded by
+# the ESP32, which validates each payload against the HTTP Content-Length
+# (http.getSize) and a SHA-256. Compression or chunked/transformed encoding would
+# make the advertised size differ from the byte stream and fail the download, so
+# these files must always be served verbatim with a real Content-Length.
+#
+# The differential asset sync also issues HTTP Range requests into assets.bacassets,
+# so byte ranges must be served untransformed (no-gzip preserves Accept-Ranges).
+
+Options -Indexes
+
+<IfModule mod_mime.c>
+    AddType application/octet-stream .bin
+    AddType application/octet-stream .bacassets
+    AddType application/octet-stream .manifest
+</IfModule>
+
+<IfModule mod_deflate.c>
+    SetEnvIfNoCase Request_URI "\.(bin|bacassets|manifest)$" no-gzip dont-vary
+</IfModule>
+
+<IfModule mod_headers.c>
+    <FilesMatch "\.(bin|bacassets|manifest)$">
+        Header unset Content-Encoding
+        Header set Cache-Control "no-transform"
+        Header set Accept-Ranges bytes
+    </FilesMatch>
+</IfModule>
