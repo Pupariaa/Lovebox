@@ -24,7 +24,7 @@
   function defaultApiBase() {
     const origin = window.location.origin;
     if (origin.startsWith("http")) return origin;
-    return "https://boite-a-coeur.techalchemy.fr";
+    return "https://boite-a-coeur.fr";
   }
 
   function sleep(ms) {
