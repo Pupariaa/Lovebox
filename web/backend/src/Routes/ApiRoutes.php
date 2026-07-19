@@ -17,6 +17,7 @@ use Bac\Controllers\OtaController;
 use Bac\Controllers\PairingController;
 use Bac\Controllers\UsbDebugController;
 use Bac\Controllers\UserController;
+use Bac\Middleware\AdminApiMiddleware;
 use Bac\Middleware\DeviceAuthMiddleware;
 use Bac\Middleware\JwtAuthMiddleware;
 use Bac\Middleware\OtaAdminMiddleware;
@@ -82,6 +83,7 @@ final class ApiRoutes
                 $authGroup->get('/users/me/verify-contact-email', UserController::class . ':verifyContactEmail');
 
                 $authGroup->get('/auth/oauth/providers', OAuthController::class . ':providers');
+                $authGroup->post('/auth/oauth/exchange', OAuthController::class . ':exchange');
                 $authGroup->post('/auth/oauth/apple/native', OAuthController::class . ':nativeApple');
                 $authGroup->get('/auth/oauth/{provider}/start', OAuthController::class . ':start');
                 $authGroup->get('/auth/oauth/{provider}/callback', OAuthController::class . ':callback');
@@ -105,6 +107,16 @@ final class ApiRoutes
                     ->add(new RateLimitMiddleware('usb-debug-list', 60, 60));
                 $usbGroup->get('/releases/{id}/chunk', UsbDebugController::class . ':firmwareChunk')
                     ->add(new RateLimitMiddleware('usb-debug-chunk', 8000, 3600));
+                $usbGroup->get('/releases/{id}/firmware', UsbDebugController::class . ':firmwareDownload')
+                    ->add(new RateLimitMiddleware('usb-debug-firmware', 30, 3600));
+                $usbGroup->get('/releases/{id}/assets', UsbDebugController::class . ':assetsDownload')
+                    ->add(new RateLimitMiddleware('usb-debug-assets', 30, 3600));
+                $usbGroup->get('/releases/{id}/assets/chunk', UsbDebugController::class . ':assetsChunk')
+                    ->add(new RateLimitMiddleware('usb-debug-assets-chunk', 8000, 3600));
+                $usbGroup->get('/releases/{id}/manifest', UsbDebugController::class . ':manifestDownload')
+                    ->add(new RateLimitMiddleware('usb-debug-manifest', 30, 3600));
+                $usbGroup->get('/releases/{id}/manifest/chunk', UsbDebugController::class . ':manifestChunk')
+                    ->add(new RateLimitMiddleware('usb-debug-manifest-chunk', 8000, 3600));
             });
 
             $group->group('/admin', function (RouteCollectorProxy $adminGroup) {
@@ -113,7 +125,7 @@ final class ApiRoutes
                 $adminGroup->get('/devices/{id}', AdminController::class . ':deviceDetail');
                 $adminGroup->post('/devices/notify-batch', AdminController::class . ':notifyBatch');
                 $adminGroup->post('/devices/command', AdminController::class . ':command');
-            })->add(OtaAdminMiddleware::class);
+            })->add(AdminApiMiddleware::class);
 
             $group->group('', function (RouteCollectorProxy $deviceGroup) {
                 $deviceGroup->get('/devices/poll', DeviceController::class . ':poll');
@@ -130,14 +142,16 @@ final class ApiRoutes
             })->add(DeviceAuthMiddleware::class)->add(new RateLimitMiddleware('device', 240, 60));
 
             $group->group('', function (RouteCollectorProxy $authGroup) {
-                $authGroup->post('/devices/claim', DeviceController::class . ':claim');
+                $authGroup->post('/devices/claim', DeviceController::class . ':claim')
+                    ->add(new RateLimitMiddleware('device-claim', 12, 60));
                 $authGroup->get('/devices/me', DeviceController::class . ':me');
                 $authGroup->patch('/devices/{id}', DeviceController::class . ':updateMe');
                 $authGroup->delete('/devices/{id}/claim', DeviceController::class . ':unclaim');
                 $authGroup->delete('/devices/{id}', DeviceController::class . ':delete');
 
                 $authGroup->post('/pairings/code/generate', PairingController::class . ':generateCode');
-                $authGroup->post('/pairings/code/accept', PairingController::class . ':acceptCode');
+                $authGroup->post('/pairings/code/accept', PairingController::class . ':acceptCode')
+                    ->add(new RateLimitMiddleware('pairing-accept', 10, 60));
                 $authGroup->patch('/pairings/{id}', PairingController::class . ':setAlias');
                 $authGroup->delete('/pairings/{id}', PairingController::class . ':unlink');
                 $authGroup->get('/pairings/me', PairingController::class . ':me');
