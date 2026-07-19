@@ -75,7 +75,7 @@ export default function ContactsScreen() {
         <Card>
           <AppText variant="headlineMedium">Partage ton code</AppText>
           <AppText variant="bodyMedium" muted style={styles.paragraph}>
-            Génère un code et transmets-le à la personne qui pourra t&apos;écrire.
+            Génère un code et transmets-le à la personne qui pourra t'écrire.
           </AppText>
           {devices.length > 1 ? (
             <View style={styles.deviceList}>
@@ -129,7 +129,7 @@ export default function ContactsScreen() {
         <Card>
           <AppText variant="headlineMedium">Ajoute un être cher</AppText>
           <AppText variant="bodyMedium" muted style={styles.paragraph}>
-            Entre le code que l&apos;on t&apos;a partagé.
+            Entre le code que l'on t'a partagé.
           </AppText>
           <TextField
             value={code}

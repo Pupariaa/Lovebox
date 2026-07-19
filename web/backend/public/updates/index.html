@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Boite a Coeur — OTA</title>
+  <title>Boîte à cœur — OTA</title>
   <style>
     :root { color-scheme: dark; font-family: system-ui, sans-serif; }
     body { margin: 0; background: #12030f; color: #e8eef8; }
@@ -26,7 +26,7 @@
 </head>
 <body>
 <main>
-  <h1>Mises a jour firmware</h1>
+  <h1>Mises à jour firmware</h1>
   <p>Upload du binaire Arduino (<code>firmware.bin</code>) et optionnellement un zip du dossier <code>assets/</code> uniquement. La config utilisateur est en NVS ; la FFAT ne contient que <code>/assets/</code>.</p>
 
   <form id="uploadForm">
@@ -56,7 +56,7 @@
     <input id="testReleaseId" type="number" placeholder="">
     <label><input type="checkbox" id="testForce"> Force (ignore version, cancel open OTA)</label>
     <button type="button" class="secondary" id="btnLookup">Lookup</button>
-    <button type="button" id="btnNotifyDevice">Envoyer OTA a ce device</button>
+    <button type="button" id="btnNotifyDevice">Envoyer OTA à ce device</button>
     <pre id="testLog" style="margin-top:12px;color:#b8c8e0;font-size:0.85rem"></pre>
   </section>
 
@@ -102,7 +102,7 @@ async function loadReleases() {
     const tr = document.createElement('tr');
     const assets = r.assets_size ? (Math.round(r.assets_size / 1024) + ' KB') : '-';
     const fw = Math.round(r.firmware_size / 1024) + ' KB';
-    const badge = r.published ? '<span class="badge on">publie</span>' : '<span class="badge off">brouillon</span>';
+    const badge = r.published ? '<span class="badge on">publié</span>' : '<span class="badge off">brouillon</span>';
     tr.innerHTML = `
       <td><strong>${r.version}</strong><br><small>${r.notes || ''}</small></td>
       <td>${fw}</td>
@@ -124,7 +124,7 @@ async function loadReleases() {
         log('Erreur: ' + (data.error || res.status));
         return;
       }
-      log('Publie. Devices notifies: ' + (data.devices_notified ?? 0));
+      log('Publié. Devices notifiés : ' + (data.devices_notified ?? 0));
       loadReleases();
     });
   });
@@ -138,7 +138,7 @@ async function loadReleases() {
         log('Erreur: ' + (data.error || res.status));
         return;
       }
-      log('OTA renvoye. Devices notifies: ' + (data.devices_notified ?? 0));
+      log('OTA renvoyé. Devices notifiés : ' + (data.devices_notified ?? 0));
     });
   });
 }
@@ -154,7 +154,7 @@ document.getElementById('uploadForm').addEventListener('submit', async (e) => {
     log('Erreur: ' + (data.error || res.status));
     return;
   }
-  log('Build ' + data.release.version + ' enregistre.');
+  log('Build ' + data.release.version + ' enregistré.');
   form.reset();
   loadReleases();
 });

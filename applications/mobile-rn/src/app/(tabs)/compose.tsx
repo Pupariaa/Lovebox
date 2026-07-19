@@ -309,7 +309,7 @@ export default function ComposeScreen() {
             displayWidth={displayWidth}
           />
           <AppText variant="caption" muted center style={styles.canvasHint}>
-            Touchez un élément pour le modifier, glissez pour le déplacer.
+            Touche un élément pour le modifier, glisse pour le déplacer.
           </AppText>
         </View>
 
@@ -406,7 +406,7 @@ export default function ComposeScreen() {
                   onInc={() => updateSelected({ size: Math.min(128, selected.size + 8) })}
                 />
                 <AppText variant="caption" muted>
-                  Astuce : glissez le carré rose en bas à droite pour redimensionner.
+                  Astuce : glisse le carré rose en bas à droite pour redimensionner.
                 </AppText>
               </View>
             ) : null}
@@ -430,7 +430,7 @@ export default function ComposeScreen() {
                   }
                 />
                 <AppText variant="caption" muted>
-                  Astuce : glissez le carré rose en bas à droite pour redimensionner.
+                  Astuce : glisse le carré rose en bas à droite pour redimensionner.
                 </AppText>
               </View>
             ) : null}
@@ -445,7 +445,7 @@ export default function ComposeScreen() {
                 onInc={() => updateSelected({ rotation: (selected.rotation + 15) % 360 })}
               />
               <AppText variant="caption" muted>
-                Astuce : pincez pour redimensionner, tournez à deux doigts pour pivoter.
+                Astuce : pince pour redimensionner, tourne à deux doigts pour pivoter.
               </AppText>
             </View>
           </Card>

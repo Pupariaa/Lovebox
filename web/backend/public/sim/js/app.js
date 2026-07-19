@@ -56,7 +56,7 @@
     if (!targets.length) {
       const opt = document.createElement("option");
       opt.value = "";
-      opt.textContent = "Aucun contact lie";
+      opt.textContent = "Aucun contact lié";
       sel.appendChild(opt);
       return;
     }
@@ -73,7 +73,7 @@
     const list = $("contactsList");
     list.innerHTML = "";
     if (!targets.length) {
-      list.innerHTML = '<p class="muted">Aucun contact lie</p>';
+      list.innerHTML = '<p class="muted">Aucun contact lié</p>';
       return;
     }
     targets.forEach((t) => {
@@ -84,12 +84,12 @@
       const btn = document.createElement("button");
       btn.type = "button";
       btn.className = "btn ghost btn-small";
-      btn.textContent = "Delier";
+      btn.textContent = "Délier";
       btn.addEventListener("click", async () => {
         try {
           await Api.unlinkPairing(t.pairing_id);
           await refreshDashboard();
-          logBle("Contact delie");
+          logBle("Contact délié");
         } catch (e) {
           alert(e.message);
         }
@@ -107,7 +107,7 @@
       const data = await Api.listSentMessages(1);
       const rows = data.items || [];
       if (!rows.length) {
-        list.innerHTML = '<p class="muted">Aucun message envoye</p>';
+        list.innerHTML = '<p class="muted">Aucun message envoyé</p>';
         return;
       }
       rows.forEach((r) => {
@@ -142,10 +142,10 @@
     const owned = devices[0];
     cards.appendChild(
       card(
-        "Ma boite",
+        "Ma boîte",
         owned
           ? `${owned.display_name || owned.device_name} (id ${owned.id}, ${owned.serial_number || "?"})`
-          : "Aucune boite associee",
+          : "Aucune boîte associée",
       ),
     );
     const targets = pairingRes.linked_targets || (pairingRes.linked_target ? [pairingRes.linked_target] : []);
@@ -163,7 +163,7 @@
                 return `${t.display_name || t.device_name} (id ${t.device_id}, ${status})`;
               })
               .join("<br>")
-          : "Aucun contact lie",
+          : "Aucun contact lié",
       ),
     );
     if (owned) {
@@ -172,7 +172,7 @@
         : owned.last_seen_seconds_ago != null
           ? `Vu il y a ${Math.max(1, Math.round(owned.last_seen_seconds_ago / 60))} min`
           : "Hors ligne";
-      cards.appendChild(card("Statut boite", label));
+      cards.appendChild(card("Statut boîte", label));
     }
     renderTargets(targets);
     renderContacts(targets);
@@ -241,7 +241,7 @@
         }
       }
       const info = await Ble.connect();
-      $("bleState").textContent = `Connecte: ${info.name}`;
+      $("bleState").textContent = `Connecté : ${info.name}`;
       $("bleDisconnectBtn").disabled = false;
       $("wifiProvisionBtn").disabled = false;
       if (info.identity) {
@@ -256,7 +256,7 @@
 
   $("bleDisconnectBtn").addEventListener("click", async () => {
     await Ble.disconnect();
-    $("bleState").textContent = "Non connecte";
+    $("bleState").textContent = "Non connecté";
     $("bleDisconnectBtn").disabled = true;
     $("wifiProvisionBtn").disabled = true;
     logBle("Disconnected");
@@ -314,7 +314,7 @@
       await Api.acceptPairingCode(code);
       $("acceptCodeInput").value = "";
       await refreshDashboard();
-      logBle("Contact lie");
+      logBle("Contact lié");
     } catch (e) {
       alert(e.message);
     }
@@ -333,7 +333,7 @@
     if (!text) return;
     const targetId = parseInt($("targetSelect").value, 10);
     if (!targetId) {
-      $("msgResult").textContent = "Selectionnez un contact";
+      $("msgResult").textContent = "Sélectionnez un contact";
       $("msgResult").className = "error";
       return;
     }
@@ -341,7 +341,7 @@
       const bacm = Bacm.packSimpleText(text);
       const res = await Api.sendMessage(targetId, bacm);
       $("messageText").value = "";
-      $("msgResult").textContent = `Message envoye (id ${res.message_id}) vers boite ${targetId}. Attendre ~30s le poll.`;
+      $("msgResult").textContent = `Message envoyé (id ${res.message_id}) vers boîte ${targetId}. Attendre ~30 s le poll.`;
       $("msgResult").className = "ok";
       await refreshSent();
     } catch (e) {

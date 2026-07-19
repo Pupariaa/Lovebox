@@ -26,9 +26,9 @@ export default function OnboardingProfileScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Card style={styles.card}>
           <View style={styles.intro}>
-            <AppText variant="titleMedium">Comment t&apos;appelles-tu ?</AppText>
+            <AppText variant="titleMedium">Comment t'appelles-tu ?</AppText>
             <AppText variant="bodyMedium" muted>
-              Ton prénom sera visible par les personnes qui t&apos;envoient des messages.
+              Ton prénom sera visible par les personnes qui t'envoient des messages.
             </AppText>
           </View>
           <TextField

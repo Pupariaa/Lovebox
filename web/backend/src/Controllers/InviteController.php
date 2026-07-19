@@ -21,13 +21,13 @@ final class InviteController
         $deepLink = 'boiteacoeur://invite/' . htmlspecialchars($token, ENT_QUOTES);
         $valid = $invite !== null;
         $html = '<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
-            . '<title>Boite a Coeur</title><style>body{font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 16px}'
+            . '<title>Boîte à cœur</title><style>body{font-family:system-ui,sans-serif;max-width:480px;margin:40px auto;padding:0 16px}'
             . 'a.btn{display:inline-block;padding:12px 20px;background:#c45c5c;color:#fff;text-decoration:none;border-radius:8px}</style></head><body>';
         if ($valid) {
-            $html .= '<h1>Invitation Boite a Coeur</h1><p>Open the app to link your account.</p>'
-                . '<p><a class="btn" href="' . $deepLink . '">Open app</a></p>';
+            $html .= '<h1>Invitation Boîte à cœur</h1><p>Ouvrez l\'application pour lier votre compte.</p>'
+                . '<p><a class="btn" href="' . $deepLink . '">Ouvrir l\'application</a></p>';
         } else {
-            $html .= '<h1>Invalid invitation</h1><p>This link is expired or already used.</p>';
+            $html .= '<h1>Invitation invalide</h1><p>Ce lien a expiré ou a déjà été utilisé.</p>';
         }
         $html .= '</body></html>';
         $response->getBody()->write($html);

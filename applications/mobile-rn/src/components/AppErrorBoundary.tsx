@@ -30,7 +30,7 @@ export class AppErrorBoundary extends Component<Props, State> {
           <ScrollView contentContainerStyle={styles.content}>
             <AppText variant="headlineMedium">Erreur application</AppText>
             <AppText variant="bodyMedium" muted style={styles.message}>
-              Une erreur inattendue s&apos;est produite. Tu peux réessayer ou relancer l&apos;application.
+              Une erreur inattendue s'est produite. Tu peux réessayer ou relancer l'application.
             </AppText>
             <AppText variant="caption" muted style={styles.message}>
               {mapApiError(this.state.error.message)}

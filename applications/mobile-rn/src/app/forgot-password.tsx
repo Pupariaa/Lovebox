@@ -26,7 +26,7 @@ export default function ForgotPasswordScreen() {
       await requestPasswordReset(email);
       setSent(true);
     } catch (e) {
-      showSnackbar(userFacingError(e, "Erreur réseau, réessayez."));
+      showSnackbar(userFacingError(e, "Erreur réseau, réessaie."));
     } finally {
       setBusy(false);
     }
@@ -44,7 +44,7 @@ export default function ForgotPasswordScreen() {
               Vérifie tes e-mails
             </AppText>
             <AppText variant="bodyMedium" muted center>
-              Si un compte existe pour {email}, un lien de réinitialisation vient d&apos;être envoyé.
+              Si un compte existe pour {email}, un lien de réinitialisation vient d'être envoyé.
               Pense à regarder dans tes spams.
             </AppText>
             <Button label="Revenir à la connexion" onPress={() => router.back()} />
@@ -52,7 +52,7 @@ export default function ForgotPasswordScreen() {
         ) : (
           <Card>
             <AppText variant="bodyMedium" muted>
-              Entre ton adresse e-mail : nous t&apos;enverrons un lien pour choisir un nouveau mot de passe.
+              Entre ton adresse e-mail : nous t'enverrons un lien pour choisir un nouveau mot de passe.
             </AppText>
             <TextField
               label="Adresse e-mail"

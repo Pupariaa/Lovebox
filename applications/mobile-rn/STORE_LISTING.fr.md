@@ -1,12 +1,12 @@
 # Publication App Store / Play Store — Boîte à cœur
 
-Guide de preparation des fiches produit, assets, conformite et comptes developpeur pour l'application mobile **Boîte à cœur** (`fr.techalchemy.boiteacoeur`).
+Guide de préparation des fiches produit, assets, conformité et comptes développeur pour l'application mobile **Boîte à cœur** (`fr.techalchemy.boiteacoeur`).
 
 ---
 
-## 1. Identifiants techniques a garder sous la main
+## 1. Identifiants techniques à garder sous la main
 
-| Element | Valeur actuelle |
+| Élément | Valeur actuelle |
 |---------|-----------------|
 | Nom public | Boîte à cœur |
 | Bundle ID iOS | `fr.techalchemy.boiteacoeur` |
@@ -16,28 +16,28 @@ Guide de preparation des fiches produit, assets, conformite et comptes developpe
 | API production | `https://boite-a-coeur.fr` |
 | Site marketing | `https://boite-a-coeur.fr` |
 | EAS project ID | `b46525a4-43c1-4fcd-aa74-61dc479b364c` |
-| Editeur | Techalchemy |
-| Contact support | support@boite-a-coeur.fr (a confirmer) |
-| Politique de confidentialite | `https://boite-a-coeur.fr/confidentialite` |
+| Éditeur | Techalchemy |
+| Contact support | support@boite-a-coeur.fr (à confirmer) |
+| Politique de confidentialité | `https://boite-a-coeur.fr/confidentialite` |
 | CGU | `https://boite-a-coeur.fr/cgu` |
-| Mentions legales | `https://boite-a-coeur.fr/mentions-legales` |
+| Mentions légales | `https://boite-a-coeur.fr/mentions-legales` |
 | Suppression de compte | `https://boite-a-coeur.fr/delete-me` |
 
 ---
 
-## 2. Comptes developpeur a ouvrir / maintenir
+## 2. Comptes développeur à ouvrir / maintenir
 
 ### Apple — Apple Developer Program
 - Compte **Organisation** (125 EUR/an) de preference si marque Techalchemy
-- Acces a **App Store Connect**
+- Accès à **App Store Connect**
 - Certificats, profils de provisioning, capabilities :
   - **Sign In with Apple** (obligatoire si Google/Facebook actifs)
   - **Access WiFi Information** (lecture SSID pour pre-remplissage WiFi)
-  - Bluetooth (deja utilise pour provisioning BLE)
+  - Bluetooth (déjà utilisé pour provisioning BLE)
 
 ### Google — Google Play Console
-- Compte developpeur (25 USD unique)
-- Acces **Play Console** pour fiche, tests internes/fermes/ouvertes, production
+- Compte développeur (25 USD unique)
+- Accès **Play Console** pour fiche, tests internes/fermés/ouverts, production
 - Compte **Google Cloud** pour OAuth Google (client Android + Web)
 
 ### Meta — Facebook Developers
@@ -46,58 +46,58 @@ Guide de preparation des fiches produit, assets, conformite et comptes developpe
 
 ---
 
-## 3. Textes de fiche store (a adapter / valider juridiquement)
+## 3. Textes de fiche store (à adapter / valider juridiquement)
 
 ### 3.1 Nom de l'application
-- **Maximum** : 30 caracteres (App Store), 50 (Play Store)
+- **Maximum** : 30 caractères (App Store), 50 (Play Store)
 - Proposition : **Boîte à cœur**
 
-### 3.2 Sous-titre iOS (30 caracteres max)
+### 3.2 Sous-titre iOS (30 caractères max)
 Propositions :
-- `Des mots d'amour a distance`
-- `Messages sur ta boite connectee`
+- `Des mots d'amour à distance`
+- `Messages sur ta boîte connectée`
 
-### 3.3 Description courte Play Store (80 caracteres max)
+### 3.3 Description courte Play Store (80 caractères max)
 Proposition :
-`Envoie des petits mots et des images sur la boite a coeur de tes proches.`
+`Envoie des petits mots et des images sur la boîte à cœur de tes proches.`
 
 ### 3.4 Description longue (FR)
 
 ```
-Boîte à cœur te permet d'envoyer des messages, des dessins et des photos sur une boite connectee offerte a quelqu'un que tu aimes.
+Boîte à cœur te permet d'envoyer des messages, des dessins et des photos sur une boîte connectée offerte à quelqu'un que tu aimes.
 
 FONCTIONNALITES
 - Composer des messages visuels (texte, emojis, images, GIF)
-- Envoyer instantanement ou programmer un message
+- Envoyer instantanément ou programmer un message
 - Recevoir les messages que tes proches t'envoient
-- Configurer le WiFi de ta boite via Bluetooth
+- Configurer le WiFi de ta boîte via Bluetooth
 - Scanner le QR code WiFi de ta box
-- Gerer plusieurs boites et contacts
-- Mettre a jour le firmware de ta boite (OTA)
+- Gérer plusieurs boîtes et contacts
+- Mettre à jour le firmware de ta boîte (OTA)
 
 CONFIGURATION SIMPLE
-1. Cree ton compte (e-mail ou connexion Google / Apple / Facebook)
-2. Active le mode configuration sur ta boite
+1. Crée ton compte (e-mail ou connexion Google / Apple / Facebook)
+2. Active le mode configuration sur ta boîte
 3. Connecte le WiFi en 2,4 GHz depuis l'application
 4. Envoie ton premier message
 
-Boîte à cœur necessite une connexion Internet sur le telephone et sur la boite pour l'envoi des messages. Le provisioning WiFi utilise le Bluetooth a proximite de la boite.
+Boîte à cœur nécessite une connexion Internet sur le téléphone et sur la boîte pour l'envoi des messages. Le provisioning WiFi utilise le Bluetooth à proximité de la boîte.
 
 Support : support@boite-a-coeur.fr
-Politique de confidentialite : https://boite-a-coeur.fr/confidentialite
+Politique de confidentialité : https://boite-a-coeur.fr/confidentialite
 ```
 
-### 3.5 Mots-cles iOS (100 caracteres max, virgules)
+### 3.5 Mots-cles iOS (100 caractères max, virgules)
 Proposition :
 `lovebox,boite,coeur,message,cadeau,couple,famille,connectee,wifi,bluetooth`
 
-### 3.6 Categorie
+### 3.6 Catégorie
 - **App Store** : Style de vie (principale) ou Social Networking (secondaire)
 - **Play Store** : Style de vie
 
 ### 3.7 Classification de contenu
-- Pas de contenu choquant genere par l'editeur
-- Contenu utilisateur : messages prives entre contacts approuves
+- Pas de contenu choquant généré par l'éditeur
+- Contenu utilisateur : messages privés entre contacts approuvés
 - **Age** : 4+ / Tout public (ajuster si moderation insuffisante)
 - Pas de gambling, pas d'achats in-app prevus en v1
 
@@ -109,7 +109,7 @@ Proposition :
 - Source actuelle : `assets/images/logo-lovebox.png`
 - **iOS App Store** : 1024 x 1024 px, PNG, sans transparence, sans coins arrondis (Apple arrondit)
 - **Play Store** : 512 x 512 px, PNG 32 bits
-- Verifier lisibilite sur fond clair et fonce
+- Vérifier lisibilité sur fond clair et foncé
 
 ### 4.2 Feature Graphic Android
 - **1024 x 500 px**, JPG ou PNG 24 bits
@@ -117,12 +117,12 @@ Proposition :
 
 ### 4.3 Captures d'ecran
 
-Preparer **6 a 8 captures** par plateforme, en **francais**, sur vrais appareils :
+Préparer **6 à 8 captures** par plateforme, en **français**, sur vrais appareils :
 
 | Ecran | Message marketing suggere |
 |-------|----------------------------|
-| Accueil / liste boites | Toutes tes boites au meme endroit |
-| Composition message | Cree un message unique |
+| Accueil / liste boîtes | Toutes tes boîtes au même endroit |
+| Composition message | Crée un message unique |
 | Envoi / planification | Envoie maintenant ou plus tard |
 | Reception | Recois les mots de tes proches |
 | Config WiFi BLE | Configure le WiFi en quelques secondes |
@@ -138,17 +138,17 @@ Astuce : utiliser le simulateur + export, ou Fastlane snapshot, ou captures manu
 
 ### 4.4 Video preview (optionnel mais recommande)
 - **App Store** : 15–30 s, formats Apple (H.264, resolutions par device)
-- **Play Store** : jusqu'a 30 s, YouTube ou upload direct
-- Scenario : ouvrir app → composer message → boite qui affiche (filmage reel de la boite si possible)
+- **Play Store** : jusqu'à 30 s, YouTube ou upload direct
+- Scenario : ouvrir l'app → composer message → boîte qui affiche (filmage réel de la boîte si possible)
 
 ---
 
-## 5. Informations legales et conformite
+## 5. Informations légales et conformité
 
 ### 5.1 URLs obligatoires
 | Champ | URL |
 |-------|-----|
-| Politique de confidentialite | https://boite-a-coeur.fr/confidentialite |
+| Politique de confidentialité | https://boite-a-coeur.fr/confidentialite |
 | Conditions d'utilisation | https://boite-a-coeur.fr/cgu |
 | Support | mailto:support@boite-a-coeur.fr ou page contact |
 | Suppression de compte | https://boite-a-coeur.fr/delete-me |
@@ -156,31 +156,31 @@ Astuce : utiliser le simulateur + export, ou Fastlane snapshot, ou captures manu
 ### 5.2 App Store — App Privacy (nutrition labels)
 Declarer les donnees collectees :
 
-| Donnee | Usage | Liee a l'identite | Tracking |
+| Donnée | Usage | Liée à l'identite | Tracking |
 |--------|-------|-------------------|----------|
 | Adresse e-mail | Compte, auth | Oui | Non |
 | Prenom | Personnalisation | Oui | Non |
 | Identifiants OAuth | Connexion | Oui | Non |
 | Contenu utilisateur (messages, images) | Fonctionnalite core | Oui | Non |
 | Identifiants appareil (boite) | Pairing | Oui | Non |
-| Donnees diagnostics (si ajoutees) | Stabilite | Selon implementation | Non |
+| Données diagnostics (si ajoutees) | Stabilite | Selon implementation | Non |
 
-### 5.3 Checklist conformite Apple (etat actuel)
+### 5.3 Checklist conformité Apple (état actuel)
 
-| Exigence Apple | Etat actuel | Action |
+| Exigence Apple | État actuel | Action |
 |----------------|-------------|--------|
 | Sign In with Apple si Google actif | OK | Maintenir |
 | Suppression compte in-app ou URL | Lien Compte > Supprimer mon compte + `/delete-me` | OK |
-| Privacy Nutrition Labels | Partiel (BLE, localisation, OAuth a mapper) | Completer avant soumission |
+| Privacy Nutrition Labels | Partiel (BLE, localisation, OAuth à mapper) | Compléter avant soumission |
 | Permission strings | OK | Revoir textes FR localisation/BLE |
-| Access WiFi Information | Entitlement present, rebuild dev client requis | Une seule capability sur Apple Developer |
+| Accès WiFi Information | Entitlement présent, rebuild dev client requis | Une seule capability sur Apple Developer |
 | Guideline 4.8 (login tiers) | OK avec Apple | Maintenir |
 | Compte demo reviewer | Manquant | Creer dans App Store Connect |
-| CGU / confidentialite accessibles | OK via legal-hub | Maintenir |
+| CGU / confidentialité accessibles | OK via legal-hub | Maintenir |
 | OAuth register prenom + CGU | OK | Maintenir |
 | Migration compte Apple relay | OK via e-mail contact verifie | Maintenir |
 
-Permissions iOS a justifier dans la fiche :
+Permissions iOS à justifier dans la fiche :
 - **Bluetooth** : configuration WiFi de la boite
 - **Camera** : scan QR WiFi
 - **Photos** : ajout d'images aux messages
@@ -192,10 +192,10 @@ Formulaire equivalent :
 - Collecte : e-mail, nom, photos, messages, identifiants appareil
 - Chiffrement en transit : Oui (HTTPS)
 - Suppression de compte possible : Oui (URL delete-me)
-- Donnees partagees avec tiers : OAuth providers uniquement si l'utilisateur choisit cette methode
+- Données partagees avec tiers : OAuth providers uniquement si l'utilisateur choisit cette methode
 
 ### 5.4 Chiffrement export (App Store)
-`ITSAppUsesNonExemptEncryption: false` deja dans app.json — repondre **Non** au questionnaire annuel sauf ajout de crypto custom.
+`ITSAppUsesNonExemptEncryption: false` déjà dans app.json — répondre **Non** au questionnaire annuel sauf ajout de crypto custom.
 
 ### 5.5 RGPD
 - DPO / contact : adresse Techalchemy
@@ -208,7 +208,7 @@ Formulaire equivalent :
 
 | Permission | Justification utilisateur |
 |------------|---------------------------|
-| BLUETOOTH_SCAN / CONNECT | Trouver et configurer la boite |
+| BLUETOOTH_SCAN / CONNECT | Trouver et configurer la boîte |
 | ACCESS_FINE_LOCATION | Requis par Android pour scan BLE et SSID WiFi |
 | CAMERA | Scanner QR code WiFi |
 | READ_MEDIA / photos (via picker) | Ajouter des images aux messages |
@@ -222,10 +222,10 @@ Remplir le **Permission Declaration Form** pour Bluetooth et localisation si Goo
 Voir `OAUTH_SETUP.fr.md` pour la configuration technique complete.
 
 Regles App Store :
-- Si **Google** ou **Facebook** sont proposes sur iOS, **Sign In with Apple** doit l'etre aussi (deja implemente).
+- Si **Google** ou **Facebook** sont proposés sur iOS, **Sign In with Apple** doit l'être aussi (déjà implémenté).
 - Tester les 3 flows sur device reel avant soumission.
 
-Variables backend production a renseigner avant review :
+Variables backend production à renseigner avant review :
 - Google Client ID + Secret
 - Apple Team ID, Key ID, cle privee, Services ID, Bundle ID natif
 - Facebook App ID + Secret
@@ -240,7 +240,7 @@ Endpoint de verification :
 
 ### 8.1 Versionning
 - `app.json` → `version` : version marketing (ex. 1.0.0)
-- iOS `CFBundleVersion` / Android `versionCode` : incrementer a chaque upload store
+- iOS `CFBundleVersion` / Android `versionCode` : incrémenter à chaque upload store
 
 ### 8.2 EAS Build
 ```bash
@@ -266,19 +266,19 @@ Checklist :
 
 ### 8.4 Notes pour le reviewer Apple
 ```
-Cette application accompagne une boite a coeur connectee (hardware ESP32).
+Cette application accompagne une boîte à cœur connectée (hardware ESP32).
 
 Compte de test :
 - E-mail : reviewer@... 
 - Mot de passe : ...
 
 Pour tester le WiFi/BLE sans hardware :
-- La connexion OAuth et la navigation principale restent testables sans boite.
+- La connexion OAuth et la navigation principale restent testables sans boîte.
 
-La boite necessite un reseau 2,4 GHz. Le scan QR WiFi accepte les codes standard WIFI:...
+La boîte nécessite un réseau 2,4 GHz. Le scan QR WiFi accepte les codes standard WIFI:...
 ```
 
-Fournir un **compte demo** avec au moins une boite deja associee si possible.
+Fournir un **compte demo** avec au moins une boîte déjà associée si possible.
 
 ---
 
@@ -289,10 +289,10 @@ Fournir un **compte demo** avec au moins une boite deja associee si possible.
 | Titre | Boîte à cœur |
 | Description courte | (voir 3.3) |
 | Description complete | (voir 3.4) |
-| Email developpeur | support@boite-a-coeur.fr |
+| Email développeur | support@boite-a-coeur.fr |
 | Site web | https://boite-a-coeur.fr |
-| Politique de confidentialite | URL confidentialite |
-| Categorie | Style de vie |
+| Politique de confidentialité | URL confidentialité |
+| Catégorie | Style de vie |
 | Public cible | Tous publics |
 | Contient des annonces | Non |
 | Achats in-app | Non |
@@ -307,7 +307,7 @@ Fournir un **compte demo** avec au moins une boite deja associee si possible.
 |---------|---------|
 | Nom | Boîte à cœur |
 | Sous-titre | (voir 3.2) |
-| Texte promotionnel | 170 caracteres — message saisonnier modifiable sans nouvelle version |
+| Texte promotionnel | 170 caractères — message saisonnier modifiable sans nouvelle version |
 | Description | (voir 3.4) |
 | Mots-cles | (voir 3.5) |
 | URL assistance | https://boite-a-coeur.fr ou mail support |
@@ -322,16 +322,16 @@ Fournir un **compte demo** avec au moins une boite deja associee si possible.
 ## 11. Materiel marketing externe (hors store mais utile)
 
 - Logo vectoriel SVG + PNG haute resolution
-- Photo produit boite (packshot notice)
+- Photo produit boîte (packshot notice)
 - QR code notice / manuel web
-- Page `/manual` deja disponible sur le site
+- Page `/manual` déjà disponible sur le site
 - Communiqué presse / fiche produit Amazon ou boutique si applicable
 
 ---
 
-## 12. CE / conformite hardware (reference notice papier)
+## 12. CE / conformité hardware (reference notice papier)
 
-Elements deja sur notice — a harmoniser avec la fiche si vente UE :
+Éléments déjà sur notice — à harmoniser avec la fiche si vente UE :
 - Marquage CE, DEEE, FCC (selon marche)
 - Fabricant : Techalchemy, adresse
 - Alimentation USB, 2,4 GHz WiFi, Bluetooth LE
@@ -345,7 +345,7 @@ Elements deja sur notice — a harmoniser avec la fiche si vente UE :
 3. Build production iOS + Android
 4. Test interne (TestFlight + Play internal testing)
 5. Beta fermee (optionnel)
-6. Soumission review (prevoir 24–72 h Apple, quelques heures a jours Google)
+6. Soumission review (prévoir 24–72 h Apple, à quelques jours Google)
 7. Publication phased release recommandee
 
 ---
@@ -354,9 +354,9 @@ Elements deja sur notice — a harmoniser avec la fiche si vente UE :
 
 - Surveiller crash reports (ajouter Sentry/Firebase si souhaite)
 - Repondre aux avis store sous 48 h
-- Incrementer version a chaque correctif soumis
-- Renouveler cle Apple Sign In (JWT) — expiration ~6 mois max par token genere, cle Apple valide 6 mois renouvelable dans le portail
-- Verifier chaque annee questionnaire confidentialite Apple et Data safety Google
+- Incrémenter version à chaque correctif soumis
+- Renouveler clé Apple Sign In (JWT) — expiration ~6 mois max par token généré, clé Apple valide 6 mois renouvelable dans le portail
+- Vérifier chaque année questionnaire confidentialité Apple et Data safety Google
 
 ---
 

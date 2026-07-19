@@ -36,7 +36,7 @@ export default function BoxesScreen() {
         {devices.length === 0 ? (
           <Card>
             <AppText variant="bodyMedium" muted style={styles.paragraph}>
-              Aucune boîte n&apos;est liée à ton compte. Configure une première boîte pour recevoir des messages.
+              Aucune boîte n'est liée à ton compte. Configure une première boîte pour recevoir des messages.
             </AppText>
             <Button
               label="Ajouter une boîte"

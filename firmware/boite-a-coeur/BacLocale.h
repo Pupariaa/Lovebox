@@ -125,7 +125,7 @@ struct BacLocale {
          pick(loc, "Langue", "Language", "Idioma", "Idioma", "Lingua",
               "Sprache"));
     copy(lbl_disconnect, sizeof(lbl_disconnect),
-         pick(loc, "Déeconnecter", "Disconnect", "Desconectar", "Desligar",
+         pick(loc, "Déconnecter", "Disconnect", "Desconectar", "Desligar",
               "Disconnetti", "Trennen"));
     copy(lbl_test, sizeof(lbl_test),
          pick(loc, "Tester", "Test", "Probar", "Testar", "Testa", "Testen"));
@@ -134,12 +134,12 @@ struct BacLocale {
          pick(loc, "Connexion perdue", "Connection lost", "Conexion perdida",
               "Ligacao perdida", "Connessione persa", "Verbindung verloren"));
     copy(lost_l1, sizeof(lost_l1),
-         pick(loc, "La connexion à internet à échoué",
+         pick(loc, "La connexion à internet a échoué",
               "Internet connection failed", "Fallo la conexion a internet",
               "Falha na ligacao a internet", "Connessione internet fallita",
               "Internetverbindung fehlgeschlagen"));
     copy(lost_l2, sizeof(lost_l2),
-         pick(loc, "Votre boîte à coeur ne parvient", "Your Lovebox cannot",
+         pick(loc, "Votre boîte à cœur ne parvient", "Your Lovebox cannot",
               "Tu caja no puede", "A tua caixa nao consegue",
               "La tua scatola non riesce", "Deine Box kann sich nicht"));
     copy(lost_l3, sizeof(lost_l3),
@@ -154,7 +154,7 @@ struct BacLocale {
               "Revisa la configuracion", "Verifica a configuracao",
               "Controlla le impostazioni", "Prufe die Einstellungen"));
     copy(lost_l6, sizeof(lost_l6),
-         pick(loc, "depuis l'application Boîte à Coeur",
+         pick(loc, "depuis l'application Boîte à Cœur",
               "in the Boite a Coeur app", "en la app Boite a Coeur",
               "na app Boite a Coeur", "nell'app Boite a Coeur",
               "in der Boite a Coeur App"));
@@ -166,7 +166,7 @@ struct BacLocale {
          pick(loc, "Bienvenue dans", "Welcome to", "Bienvenido a",
               "Bem-vindo a", "Benvenuto nella", "Willkommen in"));
     copy(welcome_l2, sizeof(welcome_l2),
-         pick(loc, "votre boîte à coeur !", "your Lovebox!",
+         pick(loc, "votre boîte à cœur !", "your Lovebox!",
               "tu caja del corazon!", "a tua caixa do coracao!",
               "tua scatola del cuore!", "deiner Herzensbox!"));
     copy(next, sizeof(next),
@@ -210,10 +210,10 @@ struct BacLocale {
          pick(loc, "Bravo !", "Done!", "Listo!", "Pronto!", "Fatto!",
               "Fertig!"));
     copy(done_l1, sizeof(done_l1),
-         pick(loc, "Votre boîte à coeur est", "Your Lovebox is", "Tu caja esta",
+         pick(loc, "Votre boîte à cœur est", "Your Lovebox is", "Tu caja esta",
               "A tua caixa esta", "La tua scatola e", "Deine Box ist"));
     copy(done_l2, sizeof(done_l2),
-         pick(loc, "desormais configurée", "now configured", "configurada",
+         pick(loc, "désormais configurée", "now configured", "configurada",
               "configurada", "configurata", "jetzt eingerichtet"));
     copy(wifi_err_title, sizeof(wifi_err_title),
          pick(loc, "Connexion impossible à", "Cannot connect to",
@@ -235,20 +235,20 @@ struct BacLocale {
               "Sin mensajes nuevos", "Sem novas mensagens",
               "Nessun nuovo messaggio", "Keine neue Nachricht"));
     copy(idle_send_heart, sizeof(idle_send_heart),
-         pick(loc, "Envoyer un coeur", "Send a heart", "Enviar un corazon",
+         pick(loc, "Envoyer un cœur", "Send a heart", "Enviar un corazon",
               "Enviar um coracao", "Invia un cuore", "Herz senden"));
     copy(disc_q1, sizeof(disc_q1),
          pick(loc, "Voulez-vous vraiment", "Do you really want",
               "Realmente quieres", "Queres mesmo", "Vuoi davvero",
               "Mochtest du wirklich"));
     copy(disc_q2, sizeof(disc_q2),
-         pick(loc, "déeconnecter votre", "to disconnect your", "desconectar tu",
+         pick(loc, "déconnecter votre", "to disconnect your", "desconectar tu",
               "desligar a tua", "disconnettere la tua", "deine Box vom"));
     copy(disc_q3, sizeof(disc_q3),
-         pick(loc, "Boîte à coeur ?", "Lovebox?", "caja?", "caixa?", "scatola?",
+         pick(loc, "Boîte à cœur ?", "Lovebox?", "caja?", "caixa?", "scatola?",
               "Internet trennen?"));
     copy(disc_progress, sizeof(disc_progress),
-         pick(loc, "Deconnexion...", "Disconnecting...", "Desconectando...",
+         pick(loc, "Déconnexion...", "Disconnecting...", "Desconectando...",
               "A desligar...", "Disconnessione...", "Trenne..."));
     copy(disc_done, sizeof(disc_done),
          pick(loc, "Boîte déconnectée", "Lovebox disconnected",
@@ -297,7 +297,7 @@ struct BacLocale {
               "Restablecer la caja?", "Repor a caixa?",
               "Reimpostare la scatola?", "Box zurucksetzen?"));
     copy(factory_q2, sizeof(factory_q2),
-         pick(loc, "Le prochain demarrage", "Next boot will show",
+         pick(loc, "Le prochain démarrage", "Next boot will show",
               "El proximo inicio", "O proximo arranque", "Al prossimo avvio",
               "Beim nachsten Start"));
     copy(factory_q3, sizeof(factory_q3),
@@ -311,10 +311,10 @@ struct BacLocale {
          pick(loc, "Réinitialisation...", "Resetting...", "Restableciendo...",
               "A repor...", "Reimpostazione...", "Zurucksetzen..."));
     copy(factory_warn, sizeof(factory_warn),
-         pick(loc, "Ne pas debrancher", "Do not unplug", "No desenchufar",
+         pick(loc, "Ne pas débrancher", "Do not unplug", "No desenchufar",
               "Nao desligar", "Non scollegare", "Nicht trennen"));
     copy(ota_progress, sizeof(ota_progress),
-         pick(loc, "Mise à jour en cours..", "Update in progress..",
+         pick(loc, "Mise à jour en cours...", "Update in progress..",
               "Actualizacion en curso..", "Atualizacao em curso..",
               "Aggiornamento...", "Update lauft.."));
     copy(ota_warn, sizeof(ota_warn),
@@ -361,8 +361,8 @@ struct BacLocale {
 
   static const char *monthName(int mon) {
     static const char *months_fr[] = {
-        "Janvier", "Fevrier", "Mars",      "Avril",   "Mai",      "Juin",
-        "Juillet", "Aout",    "Septembre", "Octobre", "Novembre", "Decembre"};
+        "Janvier", "Février", "Mars",      "Avril",   "Mai",      "Juin",
+        "Juillet", "Août",    "Septembre", "Octobre", "Novembre", "Décembre"};
     static const char *months_en[] = {
         "January", "February", "March",     "April",   "May",      "June",
         "July",    "August",   "September", "October", "November", "December"};

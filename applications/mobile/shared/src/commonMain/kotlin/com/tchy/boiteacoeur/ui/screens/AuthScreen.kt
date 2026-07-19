@@ -140,7 +140,7 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
         ) {
             if (keyboardVisible) {
                 Text(
-                    text = "Boite a Coeur",
+                    text = "Boîte à cœur",
                     style = MaterialTheme.typography.titleLarge,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.fillMaxWidth(),
@@ -183,7 +183,7 @@ fun AuthScreen(vm: AppViewModel, onAuthenticated: () -> Unit) {
                 ) {
                     Text(
                         text = if (registerMode) {
-                            "Rejoins la boite a coeur de quelqu'un que tu aimes."
+                            "Rejoins la boîte à cœur de quelqu'un que tu aimes."
                         } else {
                             "Content de te revoir."
                         },
@@ -293,7 +293,7 @@ private fun AuthHeader() {
             )
             Image(
                 painter = painterResource(Res.drawable.logo_lovebox),
-                contentDescription = "Boite a Coeur",
+                contentDescription = "Boîte à cœur",
                 modifier = Modifier
                     .size(88.dp)
                     .offset(y = ((floatOffset - 0.5f) * 12).dp)
@@ -302,7 +302,7 @@ private fun AuthHeader() {
         }
         Spacer(Modifier.height(8.dp))
         Text(
-            text = "Boite a Coeur",
+            text = "Boîte à cœur",
             style = MaterialTheme.typography.headlineMedium,
             color = MaterialTheme.colorScheme.onBackground,
         )
@@ -441,7 +441,7 @@ private fun AuthFormCard(
                 isError = password.isNotBlank() && !passwordValid,
                 supportingText = {
                     if (password.isNotBlank() && !passwordValid) {
-                        Text("Minimum 8 caracteres")
+                        Text("Minimum 8 caractères")
                     }
                 },
             )

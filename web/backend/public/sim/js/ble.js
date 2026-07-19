@@ -36,7 +36,7 @@ const Ble = (() => {
       await server.getPrimaryService(SERVICE);
     } catch (e) {
       await disconnect();
-      throw new Error("Peripheral has no Boite a Coeur service. Pick the box in provisioning mode.");
+      throw new Error("Périphérique sans service Boîte à cœur. Choisissez la boîte en mode provisioning.");
     }
     identity = await readIdentity();
     return {

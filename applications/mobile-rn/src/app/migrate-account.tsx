@@ -57,7 +57,7 @@ export default function MigrateAccountScreen() {
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Card>
           <AppText variant="bodyMedium" muted>
-            Pour ajouter une connexion par e-mail et mot de passe, confirme d&apos;abord une adresse e-mail de contact
+            Pour ajouter une connexion par e-mail et mot de passe, confirme d'abord une adresse e-mail de contact
             (adresse Apple masquée non acceptée).
           </AppText>
           <TextField

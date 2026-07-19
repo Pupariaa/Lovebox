@@ -24,8 +24,8 @@ final class EmailService
             return;
         }
         $link = rtrim($this->appUrl, '/') . '/api/v1/auth/verify-email?token=' . urlencode($token);
-        $subject = 'Boite a Coeur - Confirm your email';
-        $body = "Open this link to confirm your email:\n\n$link\n";
+        $subject = 'Boîte à cœur — Confirmez votre e-mail';
+        $body = "Bonjour,\n\nPour confirmer votre adresse e-mail, ouvrez ce lien :\n\n$link\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.\n";
         @mail($email, $subject, $body, 'From: ' . $this->from);
     }
 
@@ -35,8 +35,8 @@ final class EmailService
             return;
         }
         $link = rtrim($this->appUrl, '/') . '/api/v1/auth/reset-password?token=' . urlencode($token);
-        $subject = 'Boite a Coeur - Reinitialisation du mot de passe';
-        $body = "Bonjour,\n\nPour choisir un nouveau mot de passe, ouvrez ce lien (valable 1 heure) :\n\n$link\n\nSi vous n'etes pas a l'origine de cette demande, ignorez cet e-mail.\n";
+        $subject = 'Boîte à cœur — Réinitialisation du mot de passe';
+        $body = "Bonjour,\n\nPour choisir un nouveau mot de passe, ouvrez ce lien (valable 1 heure) :\n\n$link\n\nSi vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.\n";
         @mail($email, $subject, $body, 'From: ' . $this->from);
     }
 
@@ -46,7 +46,7 @@ final class EmailService
             return;
         }
         $link = rtrim($this->appUrl, '/') . '/api/v1/users/me/verify-contact-email?token=' . urlencode($token);
-        $subject = 'Boite a Coeur - Confirmer votre e-mail de contact';
+        $subject = 'Boîte à cœur — Confirmer votre e-mail de contact';
         $body = "Bonjour,\n\nPour confirmer votre e-mail de contact et activer la connexion par mot de passe, ouvrez ce lien :\n\n$link\n";
         @mail($email, $subject, $body, 'From: ' . $this->from);
     }
@@ -59,22 +59,22 @@ final class EmailService
         $link = rtrim($this->appUrl, '/') . '/delete-me/confirm?token=' . urlencode($token);
         [$subject, $intro] = match ($action) {
             'data_export' => [
-                'Boite a Coeur - Telechargement de vos donnees',
-                'Vous avez demande a telecharger une copie de vos donnees personnelles.',
+                'Boîte à cœur — Téléchargement de vos données',
+                'Vous avez demandé à télécharger une copie de vos données personnelles.',
             ],
             'data_delete' => [
-                'Boite a Coeur - Suppression de vos donnees',
-                'Vous avez demande la suppression de vos donnees personnelles sans supprimer votre compte.',
+                'Boîte à cœur — Suppression de vos données',
+                'Vous avez demandé la suppression de vos données personnelles sans supprimer votre compte.',
             ],
             default => [
-                'Boite a Coeur - Confirmation de suppression de compte',
-                'Vous avez demande la suppression de votre compte et de vos donnees personnelles.',
+                'Boîte à cœur — Confirmation de suppression de compte',
+                'Vous avez demandé la suppression de votre compte et de vos données personnelles.',
             ],
         };
         $body = "Bonjour,\n\n$intro\n\n"
             . "Pour confirmer cette demande (lien valable 24 heures), ouvrez :\n\n$link\n\n"
-            . "Si vous n'etes pas a l'origine de cette demande, ignorez cet e-mail.\n\n"
-            . "Conformement au RGPD, nous traitons votre demande dans un delai maximal d'un mois.\n";
+            . "Si vous n'êtes pas à l'origine de cette demande, ignorez cet e-mail.\n\n"
+            . "Conformément au RGPD, nous traitons votre demande dans un délai maximal d'un mois.\n";
         @mail($email, $subject, $body, 'From: ' . $this->from);
     }
 }

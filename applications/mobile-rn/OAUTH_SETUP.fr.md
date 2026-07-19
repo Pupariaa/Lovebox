@@ -91,7 +91,7 @@ https://boite-a-coeur.fr/api/v1/auth/oauth/google/start?app=native&redirect_uri=
 
 ### 1. Apple Developer — Identifiers
 
-#### App ID (deja existant)
+#### App ID (déjà existant)
 - Identifier : `fr.techalchemy.boiteacoeur`
 - Capability : **Sign In with Apple** ✓
 - Capability : **Access WiFi Information** ✓ (SSID pre-fill)
@@ -207,7 +207,7 @@ npx eas-cli build --profile development --platform android
 | Boutons OAuth absents | Providers non configures | Verifier GET `/auth/oauth/providers` |
 | Google `redirect_uri_mismatch` | URI callback absente du client Google | Ajouter URL exacte callback |
 | Apple `invalid_client` | JWT mal forme ou mauvais Team/Key ID | Verifier .p8 et variables |
-| Apple pas d'e-mail | Deuxieme connexion Apple | E-mail dans id_token ou compte deja lie |
+| Apple pas d'e-mail | Deuxième connexion Apple | E-mail dans id_token ou compte déjà lié |
 | Facebook app inactive | App en mode dev | Passer Live ou ajouter test user |
 | Retour app sans tokens | state/redirect natif invalide | Verifier scheme `boiteacoeur` |
 | `error=` dans callback | Provider a refuse | Lire message dans query error |
@@ -220,7 +220,7 @@ npx eas-cli build --profile development --platform android
 - Restreindre acces SSH / .env serveur
 - HTTPS obligatoire sur `APP_URL`
 - Renouveler cle Apple avant expiration (portail Developer)
-- Monitorer `/auth/oauth/*` via logs rate-limit (deja 30 req/min)
+- Monitorer `/auth/oauth/*` via logs rate-limit (déjà 30 req/min)
 
 ---
 

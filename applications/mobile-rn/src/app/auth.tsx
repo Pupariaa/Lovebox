@@ -383,7 +383,7 @@ export default function AuthScreen() {
                   ) : null}
                 </View>
                 <AppText variant="caption" muted style={styles.legalText}>
-                  J&apos;accepte les{" "}
+                  J'accepte les{" "}
                   <AppText
                     variant="caption"
                     color={colors.rosePrimary}

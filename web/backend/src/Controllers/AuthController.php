@@ -85,7 +85,7 @@ final class AuthController
             return $response->withHeader('Content-Type', 'text/html; charset=utf-8')->withStatus(400);
         }
         if (strlen($password) < 8) {
-            $response->getBody()->write($this->resetPasswordHtml($token, 'Le mot de passe doit contenir au moins 8 caracteres.'));
+            $response->getBody()->write($this->resetPasswordHtml($token, 'Le mot de passe doit contenir au moins 8 caractères.'));
             return $response->withHeader('Content-Type', 'text/html; charset=utf-8')->withStatus(400);
         }
         if ($password !== $confirm) {
@@ -99,7 +99,7 @@ final class AuthController
             $ok = false;
         }
         if (!$ok) {
-            $response->getBody()->write($this->resetPasswordHtml($token, 'Lien invalide ou expire. Refaites une demande depuis l\'application.'));
+            $response->getBody()->write($this->resetPasswordHtml($token, 'Lien invalide ou expiré. Refaites une demande depuis l\'application.'));
             return $response->withHeader('Content-Type', 'text/html; charset=utf-8')->withStatus(400);
         }
 
@@ -116,7 +116,7 @@ final class AuthController
         return <<<HTML
 <!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Boite a Coeur - Nouveau mot de passe</title>
+<title>Boîte à cœur — Nouveau mot de passe</title>
 <style>
 body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#1A0C12;color:#FFF0F2;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px}
 .card{background:#2E141C;border:1px solid #5A3848;border-radius:24px;padding:28px;max-width:380px;width:100%}
@@ -128,7 +128,7 @@ button{width:100%;margin-top:20px;background:#FF6B8A;color:#2A0A12;border:none;b
 </style></head><body>
 <form class="card" method="post" action="/api/v1/auth/reset-password">
 <h1>Nouveau mot de passe</h1>
-<p>Choisissez un nouveau mot de passe pour votre compte Boite a Coeur.</p>
+<p>Choisissez un nouveau mot de passe pour votre compte Boîte à cœur.</p>
 {$errorHtml}
 <input type="hidden" name="token" value="{$safeToken}">
 <label>Nouveau mot de passe</label>
@@ -145,15 +145,15 @@ HTML;
         return <<<HTML
 <!doctype html><html lang="fr"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Boite a Coeur</title>
+<title>Boîte à cœur</title>
 <style>
 body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;background:#1A0C12;color:#FFF0F2;margin:0;display:flex;min-height:100vh;align-items:center;justify-content:center;padding:24px;text-align:center}
 .card{background:#2E141C;border:1px solid #5A3848;border-radius:24px;padding:28px;max-width:380px}
 h1{font-size:22px;margin:0 0 8px}
 p{color:#C9A8B0;font-size:14px}
 </style></head><body>
-<div class="card"><h1>Mot de passe mis a jour</h1>
-<p>Votre mot de passe a bien ete change. Vous pouvez retourner dans l'application et vous connecter.</p></div>
+<div class="card"><h1>Mot de passe mis à jour</h1>
+<p>Votre mot de passe a bien été changé. Vous pouvez retourner dans l'application et vous connecter.</p></div>
 </body></html>
 HTML;
     }
@@ -163,10 +163,10 @@ HTML;
         $params = $request->getQueryParams();
         $token = (string) ($params['token'] ?? '');
         if ($token === '' || !$this->auth->verifyEmail($token)) {
-            $response->getBody()->write('<html><body><p>Invalid or expired token.</p></body></html>');
+            $response->getBody()->write('<html><body><p>Lien invalide ou expiré.</p></body></html>');
             return $response->withHeader('Content-Type', 'text/html')->withStatus(400);
         }
-        $response->getBody()->write('<html><body><p>Email confirmed. You can return to the app.</p></body></html>');
+        $response->getBody()->write('<html><body><p>E-mail confirmé. Vous pouvez retourner dans l\'application.</p></body></html>');
         return $response->withHeader('Content-Type', 'text/html');
     }
 }

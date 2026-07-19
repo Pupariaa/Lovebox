@@ -43,7 +43,7 @@ function WifiQrScannerCamera({
     return (
       <View style={styles.center}>
         <AppText variant="bodyMedium" muted center style={styles.hint}>
-          Autorise la caméra pour lire le QR code affiché sur ta box ou sur l&apos;étiquette du routeur.
+          Autorise la caméra pour lire le QR code affiché sur ta box ou sur l'étiquette du routeur.
         </AppText>
         <Button label="Autoriser la caméra" onPress={() => void requestPermission()} />
       </View>
@@ -115,7 +115,7 @@ export function WifiQrScanner({ visible, onClose, onScanned }: Props) {
         {nativeMissing ? (
           <View style={styles.center}>
             <AppText variant="bodyMedium" muted center style={styles.hint}>
-              Le scan QR nécessite un dev client recompilé avec expo-camera. Installe le dernier build EAS iOS, puis relance l&apos;app.
+              Le scan QR nécessite un dev client recompilé avec expo-camera. Installe le dernier build EAS iOS, puis relance l'app.
             </AppText>
             <Button label="Fermer" onPress={onClose} />
           </View>

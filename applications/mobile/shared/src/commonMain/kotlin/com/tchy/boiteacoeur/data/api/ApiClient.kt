@@ -278,7 +278,45 @@ fun mapApiError(message: String): String = when {
     message.contains("invalid code", ignoreCase = true) ->
         "Code invalide"
     message.contains("invalid credentials", ignoreCase = true) ->
-        "Email ou mot de passe incorrect"
+        "Identifiants incorrects"
+    message.contains("rate limit exceeded", ignoreCase = true) ->
+        "Trop de tentatives. Réessaie dans quelques minutes."
+    message.contains("first_name required", ignoreCase = true) ->
+        "Le prénom est obligatoire"
+    message.contains("private relay email not allowed", ignoreCase = true) ->
+        "Les adresses e-mail masquées Apple ne sont pas acceptées"
+    message.contains("contact email not verified", ignoreCase = true) ->
+        "Confirme d'abord ton e-mail de contact"
+    message.contains("claim your device first", ignoreCase = true) ->
+        "Associe d'abord ta boîte à ton compte avant de lier un contact"
+    message.contains("account_not_found", ignoreCase = true) ->
+        "Aucun compte trouvé pour ce fournisseur"
+    message.contains("cannot link to yourself", ignoreCase = true) ->
+        "Tu ne peux pas t'ajouter toi-même"
+    message.contains("cannot link to your own device", ignoreCase = true) ->
+        "Tu ne peux pas lier ta propre boîte comme contact"
+    message.contains("user not found", ignoreCase = true) ->
+        "Compte introuvable"
+    message.contains("not found", ignoreCase = true) ->
+        "Introuvable"
+    message.contains("device not claimed", ignoreCase = true) ->
+        "Cette boîte n'est pas encore associée à un compte"
+    message.contains("email not provided by provider", ignoreCase = true) ->
+        "E-mail non fourni par le fournisseur de connexion"
+    message.contains("oauth token exchange failed", ignoreCase = true) ->
+        "Échec de la connexion OAuth. Réessaie."
+    message.contains("oauth provider not configured", ignoreCase = true) ->
+        "Connexion OAuth indisponible"
+    message.contains("apple oauth not configured", ignoreCase = true) ->
+        "Connexion Apple indisponible"
+    message.contains("missing oauth code", ignoreCase = true) ->
+        "Connexion OAuth interrompue. Réessaie."
+    message.contains("password not allowed", ignoreCase = true) ->
+        "Mot de passe non disponible pour ce compte"
+    message.contains("pairing not found", ignoreCase = true) ->
+        "Contact introuvable"
+    message.contains("invalid or expired token", ignoreCase = true) ->
+        "Lien invalide ou expiré"
     message.contains("email already registered", ignoreCase = true) ->
         "Cet email est déjà utilisé"
     message.contains("invalid email", ignoreCase = true) ->
@@ -289,6 +327,20 @@ fun mapApiError(message: String): String = when {
         message.contains("invalid token", ignoreCase = true) ||
         message.contains("invalid refresh token", ignoreCase = true) ->
         "Session expirée, reconnecte-toi"
+    message.contains("invalid action", ignoreCase = true) ->
+        "Action invalide"
+    message.contains("provider user id missing", ignoreCase = true) ->
+        "Identifiant du fournisseur de connexion manquant"
+    message.contains("oauth token missing", ignoreCase = true) ->
+        "Connexion OAuth incomplète. Réessaie."
+    message.contains("missing apple credentials", ignoreCase = true) ->
+        "Connexion Apple interrompue. Réessaie."
+    message.contains("unknown command", ignoreCase = true) ->
+        "Commande inconnue"
+    message.contains("config command needs", ignoreCase = true) ->
+        "Réglage invalide : nom ou région manquant"
+    message.contains("unauthorized", ignoreCase = true) ->
+        "Accès non autorisé"
     else -> message
 }
 

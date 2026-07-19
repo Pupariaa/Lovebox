@@ -34,6 +34,46 @@ export function mapApiError(message: string): string {
   if (m.includes("account_not_found")) return "Aucun compte trouvé pour ce fournisseur.";
   if (m.includes("email already registered")) return "Cet e-mail est déjà utilisé.";
   if (m.includes("invalid email")) return "Adresse e-mail invalide.";
+  if (m.includes("invalid credentials")) return "Identifiants incorrects.";
+  if (m.includes("invalid or expired code")) return "Code invalide ou expiré.";
+  if (m.includes("invalid or expired token")) return "Lien invalide ou expiré.";
+  if (m.includes("no active pairing")) return "Aucun contact actif.";
+  if (m.includes("pairing not found")) return "Contact introuvable.";
+  if (m.includes("rate limit exceeded")) return "Trop de tentatives. Réessaie dans quelques minutes.";
+  if (m.includes("first_name required")) return "Le prénom est obligatoire.";
+  if (m.includes("private relay email not allowed"))
+    return "Les adresses e-mail masquées Apple ne sont pas acceptées.";
+  if (m.includes("contact email not verified"))
+    return "Confirme d'abord ton e-mail de contact.";
+  if (m.includes("password not allowed"))
+    return "Mot de passe non disponible pour ce compte.";
+  if (m.includes("cannot link to yourself")) return "Tu ne peux pas t'ajouter toi-même.";
+  if (m.includes("cannot link to your own device"))
+    return "Tu ne peux pas lier ta propre boîte comme contact.";
+  if (m.includes("user not found")) return "Compte introuvable.";
+  if (m.includes("not found")) return "Introuvable.";
+  if (m.includes("email not provided by provider"))
+    return "E-mail non fourni par le fournisseur de connexion.";
+  if (m.includes("oauth token exchange failed"))
+    return "Échec de la connexion OAuth. Réessaie.";
+  if (m.includes("oauth provider not configured"))
+    return "Connexion OAuth indisponible.";
+  if (m.includes("oauth provider unknown")) return "Fournisseur OAuth inconnu.";
+  if (m.includes("apple oauth not configured"))
+    return "Connexion Apple indisponible.";
+  if (m.includes("missing oauth code")) return "Connexion OAuth interrompue. Réessaie.";
+  if (m.includes("device not claimed"))
+    return "Cette boîte n'est pas encore associée à un compte.";
+  if (m.includes("invalid action")) return "Action invalide.";
+  if (m.includes("unauthorized")) return "Accès non autorisé.";
+  if (m.includes("provider user id missing"))
+    return "Identifiant du fournisseur de connexion manquant.";
+  if (m.includes("oauth token missing")) return "Connexion OAuth incomplète. Réessaie.";
+  if (m.includes("missing apple credentials"))
+    return "Connexion Apple interrompue. Réessaie.";
+  if (m.includes("unknown command")) return "Commande inconnue.";
+  if (m.includes("config command needs"))
+    return "Réglage invalide : nom ou région manquant.";
   if (m.includes("password too short"))
     return "Mot de passe trop court (8 caractères minimum).";
   if (

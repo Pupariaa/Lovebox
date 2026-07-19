@@ -61,7 +61,7 @@ export function SchedulePicker() {
     <Card>
       <View style={styles.row}>
         <View style={styles.flex}>
-          <AppText variant="titleMedium">Programmer l&apos;envoi</AppText>
+          <AppText variant="titleMedium">Programmer l'envoi</AppText>
           <AppText variant="caption" muted>
             {enabled ? "Le message partira à la date choisie." : "Envoi immédiat."}
           </AppText>
