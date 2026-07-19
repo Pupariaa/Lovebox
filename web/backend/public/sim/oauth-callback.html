@@ -7,12 +7,30 @@
 <body>
   <p>Connexion en cours...</p>
   <script>
-    const params = new URLSearchParams(window.location.search);
-    const access = params.get("access_token");
-    const refresh = params.get("refresh_token");
-    if (access) localStorage.setItem("bac_sim_access", access);
-    if (refresh) localStorage.setItem("bac_sim_refresh", refresh);
-    window.location.href = "./index.html";
+    (async () => {
+      const params = new URLSearchParams(window.location.search);
+      const base = (localStorage.getItem("bac_sim_api") || window.location.origin).replace(/\/$/, "");
+      let access = params.get("access_token");
+      let refresh = params.get("refresh_token");
+      const code = params.get("code");
+      if (code && (!access || !refresh)) {
+        try {
+          const res = await fetch(base + "/api/v1/auth/oauth/exchange", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code }),
+          });
+          if (res.ok) {
+            const body = await res.json();
+            access = body.access_token;
+            refresh = body.refresh_token;
+          }
+        } catch (e) {}
+      }
+      if (access) localStorage.setItem("bac_sim_access", access);
+      if (refresh) localStorage.setItem("bac_sim_refresh", refresh);
+      window.location.href = "./index.html";
+    })();
   </script>
 </body>
 </html>
