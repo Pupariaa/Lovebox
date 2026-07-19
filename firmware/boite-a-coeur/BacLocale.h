@@ -74,6 +74,10 @@ struct BacLocale {
   static char ota_progress[40];
   static char ota_warn[24];
   static char ota_failed[40];
+  static char usb_connected[32];
+  static char usb_hint[36];
+  static char usb_flash[40];
+  static char usb_warn[24];
 
   static const char *pick(const char *locale, const char *fr, const char *en,
                           const char *es, const char *pt, const char *it,
@@ -139,7 +143,7 @@ struct BacLocale {
               "Falha na ligacao a internet", "Connessione internet fallita",
               "Internetverbindung fehlgeschlagen"));
     copy(lost_l2, sizeof(lost_l2),
-         pick(loc, "Votre boîte à cœur ne parvient", "Your Lovebox cannot",
+         pick(loc, "Votre boîte à coeur ne parvient", "Your Lovebox cannot",
               "Tu caja no puede", "A tua caixa nao consegue",
               "La tua scatola non riesce", "Deine Box kann sich nicht"));
     copy(lost_l3, sizeof(lost_l3),
@@ -154,7 +158,7 @@ struct BacLocale {
               "Revisa la configuracion", "Verifica a configuracao",
               "Controlla le impostazioni", "Prufe die Einstellungen"));
     copy(lost_l6, sizeof(lost_l6),
-         pick(loc, "depuis l'application Boîte à Cœur",
+         pick(loc, "depuis l'application Boîte à coeur",
               "in the Boite a Coeur app", "en la app Boite a Coeur",
               "na app Boite a Coeur", "nell'app Boite a Coeur",
               "in der Boite a Coeur App"));
@@ -166,7 +170,7 @@ struct BacLocale {
          pick(loc, "Bienvenue dans", "Welcome to", "Bienvenido a",
               "Bem-vindo a", "Benvenuto nella", "Willkommen in"));
     copy(welcome_l2, sizeof(welcome_l2),
-         pick(loc, "votre boîte à cœur !", "your Lovebox!",
+         pick(loc, "votre boîte à coeur !", "your Lovebox!",
               "tu caja del corazon!", "a tua caixa do coracao!",
               "tua scatola del cuore!", "deiner Herzensbox!"));
     copy(next, sizeof(next),
@@ -210,7 +214,7 @@ struct BacLocale {
          pick(loc, "Bravo !", "Done!", "Listo!", "Pronto!", "Fatto!",
               "Fertig!"));
     copy(done_l1, sizeof(done_l1),
-         pick(loc, "Votre boîte à cœur est", "Your Lovebox is", "Tu caja esta",
+         pick(loc, "Votre boîte à coeur est", "Your Lovebox is", "Tu caja esta",
               "A tua caixa esta", "La tua scatola e", "Deine Box ist"));
     copy(done_l2, sizeof(done_l2),
          pick(loc, "désormais configurée", "now configured", "configurada",
@@ -235,7 +239,7 @@ struct BacLocale {
               "Sin mensajes nuevos", "Sem novas mensagens",
               "Nessun nuovo messaggio", "Keine neue Nachricht"));
     copy(idle_send_heart, sizeof(idle_send_heart),
-         pick(loc, "Envoyer un cœur", "Send a heart", "Enviar un corazon",
+         pick(loc, "Envoyer un coeur", "Send a heart", "Enviar un corazon",
               "Enviar um coracao", "Invia un cuore", "Herz senden"));
     copy(disc_q1, sizeof(disc_q1),
          pick(loc, "Voulez-vous vraiment", "Do you really want",
@@ -245,7 +249,7 @@ struct BacLocale {
          pick(loc, "déconnecter votre", "to disconnect your", "desconectar tu",
               "desligar a tua", "disconnettere la tua", "deine Box vom"));
     copy(disc_q3, sizeof(disc_q3),
-         pick(loc, "Boîte à cœur ?", "Lovebox?", "caja?", "caixa?", "scatola?",
+         pick(loc, "Boîte à coeur ?", "Lovebox?", "caja?", "caixa?", "scatola?",
               "Internet trennen?"));
     copy(disc_progress, sizeof(disc_progress),
          pick(loc, "Déconnexion...", "Disconnecting...", "Desconectando...",
@@ -324,6 +328,20 @@ struct BacLocale {
          pick(loc, "Échec mise à jour", "Update failed",
               "Actualizacion fallida", "Atualizacao falhou",
               "Aggiornamento fallito", "Update fehlgeschlagen"));
+    copy(usb_connected, sizeof(usb_connected),
+         pick(loc, "USB connecté", "USB connected", "USB conectado",
+              "USB ligado", "USB collegato", "USB verbunden"));
+    copy(usb_hint, sizeof(usb_hint),
+         pick(loc, "Assistance en cours...", "Support session active..",
+              "Asistencia en curso..", "Assistencia em curso..",
+              "Assistenza in corso..", "Support aktiv.."));
+    copy(usb_flash, sizeof(usb_flash),
+         pick(loc, "Mise à jour USB...", "USB update in progress..",
+              "Actualizacion USB...", "Atualizacao USB...",
+              "Aggiornamento USB...", "USB-Update..."));
+    copy(usb_warn, sizeof(usb_warn),
+         pick(loc, "Ne pas débrancher", "Do not unplug", "No desenchufar",
+              "Nao desligar", "Non scollegare", "Nicht trennen"));
   }
 
   static const char *locale() { return _loc; }
@@ -447,6 +465,10 @@ char BacLocale::factory_warn[24] = "";
 char BacLocale::ota_progress[40] = "";
 char BacLocale::ota_warn[24] = "";
 char BacLocale::ota_failed[40] = "";
+char BacLocale::usb_connected[32] = "";
+char BacLocale::usb_hint[36] = "";
+char BacLocale::usb_flash[40] = "";
+char BacLocale::usb_warn[24] = "";
 char BacLocale::disc_progress[32] = "";
 char BacLocale::disc_done[40] = "";
 char BacLocale::disc_need1[36] = "";
