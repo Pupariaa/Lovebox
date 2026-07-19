@@ -4,17 +4,26 @@ declare(strict_types=1);
 
 namespace Bac\Services;
 
+use Bac\Repositories\OAuthCodeRepository;
 use Bac\Repositories\UserRepository;
+use Bac\Support\JwksVerifier;
 use Bac\Support\TokenUtil;
 
 final class OAuthService
 {
+    private const APPLE_JWKS_URL = 'https://appleid.apple.com/auth/keys';
+    private const GOOGLE_JWKS_URL = 'https://www.googleapis.com/oauth2/v3/certs';
+    private const APPLE_ISSUERS = ['https://appleid.apple.com'];
+    private const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
+    private const EXCHANGE_CODE_TTL = 300;
+
     private array $settings;
 
     public function __construct(
         private UserRepository $users,
         private JwtService $jwt,
-        private AppleClientSecret $appleSecret
+        private AppleClientSecret $appleSecret,
+        private OAuthCodeRepository $codes
     ) {
         $this->settings = require dirname(__DIR__, 2) . '/config/settings.php';
     }
@@ -110,7 +119,7 @@ final class OAuthService
             throw new \InvalidArgumentException('missing oauth code');
         }
         $cfg = $this->providerConfig($provider);
-        $profile = $this->exchangeCode($provider, $cfg, (string) $params['code']);
+        $profile = $this->exchangeWithProvider($provider, $cfg, (string) $params['code']);
         $intent = self::decodeOAuthIntent((string) ($params['state'] ?? ''));
         return $this->loginFromProfile($provider, $profile, null, $intent);
     }
@@ -124,14 +133,9 @@ final class OAuthService
         }
         $cfg = $this->nativeAppleConfig();
         if ($code !== '') {
-            $profile = $this->exchangeCode('apple', $cfg, $code);
+            $profile = $this->exchangeWithProvider('apple', $cfg, $code);
         } else {
-            $profile = $this->decodeIdToken($idToken);
-        }
-        $email = strtolower(trim((string) ($profile['email'] ?? '')));
-        if ($email === '' && !empty($body['user']['email'])) {
-            $email = strtolower(trim((string) $body['user']['email']));
-            $profile['email'] = $email;
+            $profile = $this->decodeIdToken($idToken, 'apple', (string) $cfg['client_id']);
         }
         $firstName = trim((string) ($body['user']['name']['firstName'] ?? ''));
         $intent = self::normalizeIntent((string) ($body['intent'] ?? 'register'));
@@ -180,7 +184,7 @@ final class OAuthService
         ];
     }
 
-    private function exchangeCode(string $provider, array $cfg, string $code): array
+    private function exchangeWithProvider(string $provider, array $cfg, string $code): array
     {
         $clientSecret = $cfg['client_secret'];
         if ($provider === 'apple') {
@@ -214,10 +218,10 @@ final class OAuthService
             throw new \InvalidArgumentException($detail !== '' ? $detail : 'oauth token missing');
         }
         if ($provider === 'apple' && !empty($token['id_token'])) {
-            return $this->decodeIdToken((string) $token['id_token']);
+            return $this->decodeIdToken((string) $token['id_token'], 'apple', (string) $cfg['client_id']);
         }
         if ($provider === 'google' && !empty($token['id_token'])) {
-            $decoded = $this->decodeIdToken((string) $token['id_token']);
+            $decoded = $this->decodeIdToken((string) $token['id_token'], 'google', (string) $cfg['client_id']);
             if (!empty($decoded['email'])) {
                 return $decoded;
             }
@@ -237,14 +241,49 @@ final class OAuthService
         return is_array($profile) ? $profile : [];
     }
 
-    private function decodeIdToken(string $idToken): array
+    private function decodeIdToken(string $idToken, string $provider, string $audience): array
     {
-        $parts = explode('.', $idToken);
-        if (!isset($parts[1])) {
-            return [];
+        $idToken = trim($idToken);
+        if ($idToken === '') {
+            throw new \InvalidArgumentException('missing id_token');
         }
-        $payload = json_decode(base64_decode(strtr($parts[1], '-_', '+/'), true) ?: '', true);
-        return is_array($payload) ? $payload : [];
+        if ($provider === 'apple') {
+            return JwksVerifier::verify($idToken, self::APPLE_JWKS_URL, self::APPLE_ISSUERS, $audience);
+        }
+        if ($provider === 'google') {
+            return JwksVerifier::verify($idToken, self::GOOGLE_JWKS_URL, self::GOOGLE_ISSUERS, $audience);
+        }
+        throw new \InvalidArgumentException('unsupported id_token provider');
+    }
+
+    public function createExchangeCode(array $tokens): string
+    {
+        $code = TokenUtil::randomUrlSafe(32);
+        $this->codes->store(
+            TokenUtil::hashToken($code),
+            (string) ($tokens['access_token'] ?? ''),
+            (string) ($tokens['refresh_token'] ?? ''),
+            (int) ($tokens['expires_in'] ?? $this->jwt->accessTtl()),
+            self::EXCHANGE_CODE_TTL
+        );
+        return $code;
+    }
+
+    public function exchangeCode(string $code): array
+    {
+        $code = trim($code);
+        if ($code === '') {
+            throw new \InvalidArgumentException('missing code');
+        }
+        $row = $this->codes->consume(TokenUtil::hashToken($code));
+        if (!$row) {
+            throw new \InvalidArgumentException('invalid or expired code');
+        }
+        return [
+            'access_token' => (string) $row['access_token'],
+            'refresh_token' => (string) $row['refresh_token'],
+            'expires_in' => (int) $row['expires_in'],
+        ];
     }
 
     private function nativeAppleConfig(): array
