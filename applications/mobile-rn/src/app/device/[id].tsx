@@ -3,8 +3,8 @@ import { Alert, Pressable, ScrollView, StyleSheet, Switch, View } from "react-na
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AppText, Button, Card, Screen, Slider, StatusPill, TextField } from "@/components/ui";
-import { ensureBleAccess } from "@/data/ble/blePermissionStatus";
-import { useAppStore } from "@/store/appStore";
+import { bleAccessMessage, ensureBleAccess } from "@/data/ble/blePermissionStatus";
+import { useAppStore, useLoading } from "@/store/appStore";
 import { COMMON_REGIONS, DEVICE_LOCALES, deviceLabel, formatLastSeen } from "@/util/formatters";
 import { colors, radius, spacing } from "@/theme/theme";
 
@@ -40,7 +40,9 @@ export default function DeviceDetailScreen() {
   const pushBoxSettingsLive = useAppStore((s) => s.pushBoxSettingsLive);
   const unclaimDevice = useAppStore((s) => s.unclaimDevice);
   const resetAndDeleteDevice = useAppStore((s) => s.resetAndDeleteDevice);
-  const loading = useAppStore((s) => s.loading);
+  const bleLiveSettingsError = useAppStore((s) => s.bleLiveSettingsError);
+  const saving = useLoading("saveSettings");
+  const deviceActionBusy = useLoading("deviceAction");
   const showSnackbar = useAppStore((s) => s.showSnackbar);
 
   const device = devices.find((d) => String(d.id) === id) ?? null;
@@ -129,9 +131,8 @@ export default function DeviceDetailScreen() {
   const openBle = async () => {
     const status = await ensureBleAccess();
     if (!status.canScan) {
-      showSnackbar(
-        status.state === "bluetooth_off" ? "Active le Bluetooth." : "Autorisations Bluetooth requises.",
-      );
+      showSnackbar(bleAccessMessage(status.state) || "Autorisations Bluetooth requises.");
+      return;
     }
     router.push("/ble");
   };
@@ -292,6 +293,11 @@ export default function DeviceDetailScreen() {
                 La luminosité est appliquée en direct via Bluetooth si la boîte est à proximité. Enregistre pour
                 synchroniser le cloud.
               </AppText>
+              {bleLiveSettingsError ? (
+                <AppText variant="caption" color={colors.danger}>
+                  {bleLiveSettingsError}
+                </AppText>
+              ) : null}
               <Slider label="Luminosité" value={backlightLevel} onValueChange={onBacklightChange} />
               <TextField
                 label="Délai veille (secondes)"
@@ -334,8 +340,8 @@ export default function DeviceDetailScreen() {
             <Button
               label="Enregistrer"
               onPress={onSave}
-              loading={loading}
-              disabled={!sleepValid || loading}
+              loading={saving}
+              disabled={!sleepValid || saving}
             />
 
             <Card style={styles.section}>
@@ -345,12 +351,17 @@ export default function DeviceDetailScreen() {
                 données et supprime la boîte du serveur.
               </AppText>
               <View style={styles.dangerActions}>
-                <Button label="Dissocier cette boîte" variant="danger" onPress={onUnclaim} loading={loading} />
+                <Button
+                  label="Dissocier cette boîte"
+                  variant="danger"
+                  onPress={onUnclaim}
+                  loading={deviceActionBusy}
+                />
                 <Button
                   label="Réinitialiser et supprimer"
                   variant="danger"
                   onPress={onReset}
-                  loading={loading}
+                  loading={deviceActionBusy}
                 />
               </View>
             </Card>
