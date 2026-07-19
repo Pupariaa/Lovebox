@@ -14,6 +14,9 @@ import com.tchy.boiteacoeur.data.model.UserProfileResponse
 import com.tchy.boiteacoeur.data.storage.TokenStorage
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
+import io.ktor.client.plugins.ConnectTimeoutException
+import io.ktor.client.plugins.HttpRequestTimeoutException
+import io.ktor.client.plugins.SocketTimeoutException
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.delete
 import io.ktor.client.request.get
@@ -25,7 +28,9 @@ import io.ktor.client.statement.HttpResponse
 import io.ktor.client.statement.bodyAsText
 import io.ktor.http.ContentType
 import io.ktor.http.contentType
+import io.ktor.http.encodeURLParameter
 import io.ktor.serialization.kotlinx.json.json
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
@@ -186,7 +191,7 @@ class ApiClient(private val tokens: TokenStorage) {
             val query = buildString {
                 append("target_device_id=$targetDeviceId")
                 if (!scheduledAt.isNullOrBlank()) {
-                    append("&scheduled_at=${scheduledAt.trim()}")
+                    append("&scheduled_at=${scheduledAt.trim().encodeURLParameter()}")
                 }
             }
             client.post("${AppConfig.API_BASE}/api/v1/messages?$query") {
@@ -222,18 +227,37 @@ class ApiClient(private val tokens: TokenStorage) {
 
     private suspend fun <T> authRequest(block: suspend (String) -> T): T {
         var token = tokens.getAccessToken() ?: throw ApiException("Non connecté", 401)
-        return try {
-            block(token)
-        } catch (e: ApiException) {
-            if (e.status != 401) throw e
-            try {
-                refresh()
-            } catch (refreshError: ApiException) {
-                clearLocalSession()
-                throw refreshError
-            }
+        val firstAttempt = runAuthBlock(token, block)
+        firstAttempt.exceptionOrNull()?.let { error ->
+            if (error !is ApiException || error.status != 401) throw error
+            refreshOrThrow()
             token = tokens.getAccessToken() ?: throw ApiException("Session expirée", 401)
-            block(token)
+            return runAuthBlock(token, block).getOrElse { throw it }
+        }
+        return firstAttempt.getOrThrow()
+    }
+
+    private suspend fun <T> runAuthBlock(token: String, block: suspend (String) -> T): Result<T> =
+        try {
+            Result.success(block(token))
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (apiError: ApiException) {
+            Result.failure(apiError)
+        } catch (networkError: Throwable) {
+            Result.failure(networkErrorToApiException(networkError))
+        }
+
+    private suspend fun refreshOrThrow() {
+        try {
+            refresh()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (refreshError: ApiException) {
+            clearLocalSession()
+            throw refreshError
+        } catch (networkError: Throwable) {
+            throw networkErrorToApiException(networkError)
         }
     }
 
@@ -246,6 +270,19 @@ class ApiClient(private val tokens: TokenStorage) {
 }
 
 class ApiException(message: String, val status: Int = 0) : Exception(message)
+
+fun networkErrorToApiException(error: Throwable): ApiException {
+    if (error is ApiException) return error
+    val message = when (error) {
+        is HttpRequestTimeoutException,
+        is ConnectTimeoutException,
+        is SocketTimeoutException ->
+            "Délai dépassé. Vérifie ta connexion et réessaie."
+        else ->
+            "Erreur réseau. Vérifie ta connexion et réessaie."
+    }
+    return ApiException(message, 0)
+}
 
 private val apiJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
