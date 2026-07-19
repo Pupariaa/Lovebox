@@ -11,11 +11,17 @@
 #include "BacDebug.h"
 #include "BacSha256.h"
 #include "BacTls.h"
+#include "BacWatchdog.h"
 
 struct BacAssetsOta {
     typedef void (*ProgressFn)(void *ctx, int percent);
     static constexpr size_t kBufSize = 8192;
     static constexpr const char *kLegacyStagingPath = "/ota/staging.baca";
+    static constexpr const char *kAssetsDir = "/assets";
+    static constexpr const char *kStagingDir = "/assets_new";
+    static constexpr const char *kBackupDir = "/assets_old";
+    static constexpr const char *kStagingMarkerPath = "/assets_new/.ok";
+    static constexpr const char *kStagingManifestPath = "/assets_new/.manifest";
     static constexpr const char *kMarkerPath = "/assets/.ok";
     // Persistent manifest describing what is currently on disk, used to diff-sync the
     // next update. The freshly downloaded manifest is staged at the FFAT root (outside
@@ -38,7 +44,7 @@ struct BacAssetsOta {
     // When a per-file manifest is available and we already have a local one, only the
     // changed byte ranges are fetched (via HTTP Range into assets.bacassets) and stale
     // files deleted. Otherwise (no manifest, no local baseline, or too many changes) we
-    // fall back to the full streaming install that wipes /assets and rewrites everything.
+    // fall back to a full streaming install into a staging tree that is swapped in atomically.
     static bool installPackFromUrl(const char *url, uint32_t expectedSize, const char *expectedSha256,
                                    ProgressFn progress, void *ctx, bool *shaMismatch = nullptr,
                                    const char *version = nullptr, const char *manifestUrl = nullptr) {
@@ -81,6 +87,7 @@ struct BacAssetsOta {
                             ok = true;
                             didDiff = true;
                         } else if ((uint64_t)changed * 2 < (uint64_t)newCount) {
+                            FFat.remove(kMarkerPath);
                             uint32_t td = millis();
                             ok = applyDiff(FFat, url, kManifestPath, kManifestTmpPath, changed, progress, ctx);
                             BacDebug::eventf("assets", "diff apply %lu ms ok=%d",
@@ -100,37 +107,124 @@ struct BacAssetsOta {
         }
 
         if (!didDiff) {
-            BacDebug::event("assets", "wipe /assets");
-            uint32_t tWipe = millis();
-            if (!wipeAssetsTree(FFat)) {
-                BacDebug::event("assets", "wipe failed");
+            if (!prefreeForFullInstall()) {
+                BacDebug::event("assets", "prefree failed");
                 if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
                 FFat.end();
                 lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
                 return false;
             }
-            if (!FFat.exists("/assets")) FFat.mkdir("/assets");
-            BacDebug::eventf("assets", "wipe done %lu ms", (unsigned long)(millis() - tWipe));
-
-            BacDebug::eventf("assets", "stream install %s", url);
+            haveNewManifest = false;
+            if (manifestUrl && manifestUrl[0]) {
+                if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
+                uint32_t tm = millis();
+                if (downloadToFile(FFat, manifestUrl, kManifestTmpPath) &&
+                    manifestFileValid(FFat, kManifestTmpPath)) {
+                    haveNewManifest = true;
+                    BacDebug::eventf("assets", "manifest dl %lu ms", (unsigned long)(millis() - tm));
+                }
+            }
+            BacDebug::eventf("assets", "full install %s", url);
             uint32_t tInstall = millis();
-            ok = streamInstall(url, expectedSize, expectedSha256, FFat, progress, ctx, shaMismatch);
+            ok = streamInstall(url, expectedSize, expectedSha256, FFat, progress, ctx, shaMismatch, kAssetsDir);
             BacDebug::eventf("assets", "install %lu ms (%lu KB/s)", (unsigned long)(millis() - tInstall),
                              (millis() - tInstall) > 0
                                  ? (unsigned long)((uint64_t)expectedSize / (millis() - tInstall))
                                  : 0UL);
+            if (ok) {
+                if (haveNewManifest) replaceManifest(FFat);
+                writeMarker(FFat, version);
+            }
+            if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
+        } else {
+            if (ok) {
+                if (haveNewManifest) replaceManifest(FFat);
+                writeMarker(FFat, version);
+            }
+            if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
         }
 
+        BacDebug::event("assets", ok ? "install ok" : "install failed");
+        FFat.end();
+        return ok;
+    }
+
+    static bool installPackFromBuffer(const uint8_t *data, uint32_t expectedSize, const char *expectedSha256,
+                                      ProgressFn progress, void *ctx, bool *shaMismatch = nullptr,
+                                      const char *version = nullptr, const uint8_t *manifestData = nullptr,
+                                      uint32_t manifestSize = 0, bool keepLucarneUnmounted = false) {
+        if (!data || !expectedSha256 || strlen(expectedSha256) != 64 || expectedSize == 0) {
+            BacDebug::event("assets", "invalid buffer install args");
+            return false;
+        }
+
+        lucarne::unmountVolume();
+        if (!FFat.begin(false, "/ffat", 10, "ffat")) {
+            BacDebug::event("assets", "ffat mount failed");
+            lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
+            return false;
+        }
+
+        removeLegacyStaging(FFat);
+
+        if (keepLucarneUnmounted) {
+            if (!prefreeForUsbInstall(FFat)) {
+                BacDebug::event("assets", "prefree failed");
+                if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
+                FFat.end();
+                return false;
+            }
+        } else if (!prefreeForFullInstall()) {
+            BacDebug::event("assets", "prefree failed");
+            if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
+            FFat.end();
+            lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
+            return false;
+        }
+
+        bool haveNewManifest = false;
+        if (manifestData && manifestSize > 0 && manifestBufferValid(manifestData, manifestSize)) {
+            File out = FFat.open(kManifestTmpPath, FILE_WRITE);
+            if (out) {
+                size_t wrote = out.write(manifestData, manifestSize);
+                out.close();
+                if (wrote == manifestSize) haveNewManifest = true;
+            }
+        }
+
+        BacDebug::event("assets", "usb buffer install");
+        uint32_t tInstall = millis();
+        bool ok = bufferInstall(data, expectedSize, expectedSha256, FFat, progress, ctx, shaMismatch, kAssetsDir);
+        BacDebug::eventf("assets", "install %lu ms", (unsigned long)(millis() - tInstall));
         if (ok) {
             if (haveNewManifest) replaceManifest(FFat);
             writeMarker(FFat, version);
-            BacDebug::event("assets", "install ok");
-        } else {
-            if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
-            BacDebug::event("assets", "install failed");
         }
+        if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
+
+        BacDebug::event("assets", ok ? "install ok" : "install failed");
         FFat.end();
+        if (!keepLucarneUnmounted) {
+            if (!lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat")) {
+                BacDebug::event("assets", "volume remount failed");
+            }
+        }
         return ok;
+    }
+
+    static bool bootIntegrityCheck() {
+        bool mounted = lucarne::volumeMounted();
+        if (!mounted) {
+            if (!FFat.begin(false, "/ffat", 10, "ffat")) return false;
+        }
+        reconcileStaging(FFat);
+        bool healthy = FFat.exists(kMarkerPath);
+        if (!healthy) {
+            BacDebug::event("assets", "boot marker missing, forcing full reinstall");
+            if (FFat.exists(kManifestPath)) FFat.remove(kManifestPath);
+        }
+        if (!mounted) FFat.end();
+        return healthy;
     }
 
     // Returns true when the completion marker exists, meaning the last assets install
@@ -143,6 +237,12 @@ struct BacAssetsOta {
         bool present = FFat.exists(kMarkerPath);
         if (!mounted) FFat.end();
         return present;
+    }
+
+    static bool manifestBufferValid(const uint8_t *data, uint32_t size) {
+        if (!data || size < 12) return false;
+        if (data[0] != 'B' || data[1] != 'A' || data[2] != 'C' || data[3] != 'X') return false;
+        return readLe32(data + 4) == 1;
     }
 
 private:
@@ -162,6 +262,7 @@ private:
         size_t got = 0;
         uint32_t started = millis();
         while (got < len) {
+            BacWatchdog::feed();
             if (stream.available()) {
                 int n = stream.readBytes(buf + got, len - got);
                 if (n <= 0) return false;
@@ -242,6 +343,148 @@ private:
         return readLe32(h + 4) == 1;
     }
 
+    struct BufferReader {
+        const uint8_t *data;
+        size_t len;
+        size_t pos;
+
+        bool read(uint8_t *buf, size_t n) {
+            if (pos + n > len) return false;
+            memcpy(buf, data + pos, n);
+            pos += n;
+            return true;
+        }
+    };
+
+    static bool readHashedBuf(BufferReader &reader, uint8_t *buf, size_t len, BacSha256 &sha) {
+        if (!reader.read(buf, len)) return false;
+        sha.update(buf, len);
+        return true;
+    }
+
+    static bool bufferInstall(const uint8_t *data, uint32_t expectedSize, const char *expectedSha256, fs::FS &fs,
+                              ProgressFn progress, void *ctx, bool *shaMismatch, const char *destRoot = kAssetsDir) {
+        BufferReader reader = {data, expectedSize, 0};
+        BacSha256 sha;
+        sha.begin();
+        size_t consumed = 0;
+        uint32_t readMs = 0, writeMs = 0, openMs = 0;
+
+        uint8_t header[12];
+        if (!readHashedBuf(reader, header, 12, sha)) {
+            BacDebug::event("assets", "header read failed");
+            return false;
+        }
+        consumed += 12;
+        if (header[0] != 'B' || header[1] != 'A' || header[2] != 'C' || header[3] != 'A') {
+            BacDebug::event("assets", "bad magic");
+            return false;
+        }
+        uint32_t formatVersion = readLe32(header + 4);
+        uint32_t fileCount = readLe32(header + 8);
+        if (formatVersion != 1 || fileCount == 0) {
+            BacDebug::event("assets", "bad pack header");
+            return false;
+        }
+
+        uint8_t buf[kBufSize];
+        for (uint32_t i = 0; i < fileCount; i++) {
+            if (i == 0 || ((i + 1) % 32) == 0 || i + 1 == fileCount) {
+                BacDebug::eventf("assets", "install %lu/%lu", (unsigned long)(i + 1), (unsigned long)fileCount);
+            }
+            BacWatchdog::feed();
+            uint8_t lenBytes[2];
+            if (!readHashedBuf(reader, lenBytes, 2, sha)) {
+                BacDebug::eventf("assets", "read path len failed file %lu", (unsigned long)i);
+                return false;
+            }
+            consumed += 2;
+            uint16_t pathLen = readLe16(lenBytes);
+            if (pathLen == 0 || pathLen >= 192) {
+                BacDebug::eventf("assets", "bad path len file %lu", (unsigned long)i);
+                return false;
+            }
+            char path[192];
+            if (!readHashedBuf(reader, (uint8_t *)path, pathLen, sha)) {
+                BacDebug::eventf("assets", "read path failed file %lu", (unsigned long)i);
+                return false;
+            }
+            path[pathLen] = 0;
+            consumed += pathLen;
+            if (!isSafeAssetPath(path)) {
+                BacDebug::eventf("assets", "unsafe path %s", path);
+                return false;
+            }
+            char remapped[200];
+            const char *writePath = path;
+            if (destRoot && strcmp(destRoot, kAssetsDir) != 0) {
+                snprintf(remapped, sizeof(remapped), "%s%s", destRoot, path + strlen(kAssetsDir));
+                writePath = remapped;
+            }
+            uint8_t sizeBytes[4];
+            if (!readHashedBuf(reader, sizeBytes, 4, sha)) {
+                BacDebug::eventf("assets", "read size failed %s", path);
+                return false;
+            }
+            consumed += 4;
+            uint32_t size = readLe32(sizeBytes);
+            if (!ensureParentDirs(fs, writePath)) return false;
+            uint32_t tOpen = millis();
+            File out = fs.open(writePath, FILE_WRITE);
+            openMs += millis() - tOpen;
+            if (!out) {
+                BacDebug::eventf("assets", "open failed %s", path);
+                return false;
+            }
+            uint32_t remaining = size;
+            while (remaining > 0) {
+                size_t chunk = remaining > kBufSize ? kBufSize : remaining;
+                uint32_t tRead = millis();
+                bool readOk = readHashedBuf(reader, buf, chunk, sha);
+                readMs += millis() - tRead;
+                if (!readOk) {
+                    out.close();
+                    BacDebug::eventf("assets", "read body failed %s", path);
+                    return false;
+                }
+                uint32_t tWrite = millis();
+                size_t wrote = out.write(buf, chunk);
+                writeMs += millis() - tWrite;
+                if (wrote != chunk) {
+                    out.close();
+                    BacDebug::eventf("assets", "write failed %s", writePath);
+                    return false;
+                }
+                remaining -= (uint32_t)chunk;
+                consumed += chunk;
+                if (progress && expectedSize > 0) {
+                    int pct = (int)((consumed * 100ULL) / expectedSize);
+                    if (pct > 100) pct = 100;
+                    progress(ctx, pct);
+                }
+            }
+            uint32_t tClose = millis();
+            out.close();
+            openMs += millis() - tClose;
+        }
+
+        BacDebug::eventf("assets", "timing read=%lums write=%lums open=%lums", (unsigned long)readMs,
+                         (unsigned long)writeMs, (unsigned long)openMs);
+
+        if (consumed != (size_t)expectedSize) {
+            BacDebug::eventf("assets", "short read %u/%lu", (unsigned)consumed, (unsigned long)expectedSize);
+            return false;
+        }
+        char gotSha[65];
+        if (!sha.finishHex(gotSha) || !BacSha256::equalsHex(expectedSha256, gotSha)) {
+            BacDebug::eventf("assets", "sha256 mismatch got=%s", gotSha);
+            if (shaMismatch) *shaMismatch = true;
+            return false;
+        }
+        BacDebug::eventf("assets", "ok %lu files %u bytes", (unsigned long)fileCount, (unsigned)consumed);
+        return true;
+    }
+
     static bool downloadToFile(fs::FS &fs, const char *url, const char *dest) {
         WiFiClientSecure client;
         BacTls::configure(client);
@@ -270,6 +513,7 @@ private:
         size_t total = 0;
         uint32_t started = millis();
         while (len < 0 || total < (size_t)len) {
+            BacWatchdog::feed();
             if (stream->available()) {
                 int n = stream->readBytes(buf, sizeof(buf));
                 if (n <= 0) {
@@ -587,6 +831,7 @@ private:
     static bool removeListedFiles(fs::FS &fs, const String &files) {
         int start = 0;
         while (start < (int)files.length()) {
+            BacWatchdog::feed();
             int nl = files.indexOf('\n', start);
             if (nl < 0) break;
             String p = files.substring(start, nl);
@@ -618,39 +863,92 @@ private:
         }
     }
 
-    // Empties /assets while keeping the root directory itself, so the stream
-    // install can write straight into it without re-creating the folder.
-    static bool wipeAssetsTree(fs::FS &fs) {
-        if (!fs.exists("/assets")) return true;
-        File dir = fs.open("/assets");
-        if (!dir) {
-            BacDebug::event("assets", "wipe open failed");
-            return false;
-        }
+    static bool removeTree(fs::FS &fs, const char *root) {
+        if (!fs.exists(root)) return true;
+        File dir = fs.open(root);
+        if (!dir) return false;
         if (!dir.isDirectory()) {
             dir.close();
-            if (!fs.remove("/assets")) {
-                BacDebug::event("assets", "wipe rm file failed");
-                return false;
-            }
-            return true;
+            return fs.remove(root);
         }
         dir.close();
-
         String files;
         String dirs;
-        listTree(fs, "/assets", files, dirs);
-        int fileCount = 0;
-        for (int i = 0; i < (int)files.length(); i++)
-            if (files.charAt(i) == '\n') fileCount++;
-        int dirCount = 0;
-        for (int i = 0; i < (int)dirs.length(); i++)
-            if (dirs.charAt(i) == '\n') dirCount++;
-        BacDebug::eventf("assets", "wipe files=%d dirs=%d", fileCount, dirCount);
-
+        listTree(fs, root, files, dirs);
         if (!removeListedFiles(fs, files)) return false;
         removeListedDirs(fs, dirs);
+        return fs.rmdir(root);
+    }
+
+    static bool swapStagingIntoAssets(fs::FS &fs) {
+        if (!fs.exists(kStagingDir)) return false;
+        if (fs.exists(kAssetsDir)) {
+            removeTree(fs, kBackupDir);
+            if (!fs.rename(kAssetsDir, kBackupDir)) {
+                BacDebug::event("assets", "swap backup rename failed");
+                return false;
+            }
+        }
+        if (!fs.rename(kStagingDir, kAssetsDir)) {
+            BacDebug::event("assets", "swap promote rename failed");
+            if (!fs.exists(kAssetsDir) && fs.exists(kBackupDir)) fs.rename(kBackupDir, kAssetsDir);
+            return false;
+        }
+        removeTree(fs, kBackupDir);
         return true;
+    }
+
+    static bool prefreeForUsbInstall(fs::FS &fs) {
+        BacDebug::event("assets", "prefree usb wipe");
+        if (fs.exists(kMarkerPath)) fs.remove(kMarkerPath);
+        if (fs.exists(kManifestPath)) fs.remove(kManifestPath);
+        if (fs.exists(kManifestTmpPath)) fs.remove(kManifestTmpPath);
+        removeTree(fs, kStagingDir);
+        removeTree(fs, kBackupDir);
+        if (fs.exists(kAssetsDir)) {
+            if (!removeTree(fs, kAssetsDir)) return false;
+        }
+        return true;
+    }
+
+    static bool prefreeForFullInstall() {
+        BacDebug::event("assets", "prefree format");
+        FFat.end();
+        if (!FFat.format()) {
+            BacDebug::event("assets", "prefree format failed");
+            if (!FFat.begin(false, "/ffat", 10, "ffat")) return false;
+            return false;
+        }
+        if (!FFat.begin(false, "/ffat", 10, "ffat")) {
+            BacDebug::event("assets", "prefree remount failed");
+            return false;
+        }
+        return true;
+    }
+
+    static void reconcileStaging(fs::FS &fs) {
+        if (fs.exists(kStagingDir)) {
+            if (fs.exists(kStagingMarkerPath)) {
+                removeTree(fs, kAssetsDir);
+                if (fs.rename(kStagingDir, kAssetsDir)) {
+                    BacDebug::event("assets", "staging promoted at boot");
+                } else {
+                    BacDebug::event("assets", "staging promote failed at boot");
+                }
+            } else {
+                removeTree(fs, kStagingDir);
+                BacDebug::event("assets", "incomplete staging cleared");
+            }
+        }
+        if (fs.exists(kBackupDir)) {
+            if (!fs.exists(kAssetsDir)) {
+                if (fs.rename(kBackupDir, kAssetsDir)) {
+                    BacDebug::event("assets", "restored backup at boot");
+                }
+            } else {
+                removeTree(fs, kBackupDir);
+            }
+        }
     }
 
     static bool isSafeAssetPath(const char *path) {
@@ -695,14 +993,42 @@ private:
     }
 
     static void writeMarker(fs::FS &fs, const char *version) {
-        File f = fs.open(kMarkerPath, FILE_WRITE);
+        writeMarkerAt(fs, kMarkerPath, version);
+    }
+
+    static void writeMarkerAt(fs::FS &fs, const char *path, const char *version) {
+        File f = fs.open(path, FILE_WRITE);
         if (!f) return;
         f.print(version && version[0] ? version : "1");
         f.close();
     }
 
+    static bool stageManifest(fs::FS &fs) {
+        if (!fs.exists(kManifestTmpPath)) return false;
+        if (fs.exists(kStagingManifestPath)) fs.remove(kStagingManifestPath);
+        File in = fs.open(kManifestTmpPath);
+        if (!in) return false;
+        File out = fs.open(kStagingManifestPath, FILE_WRITE);
+        if (!out) {
+            in.close();
+            return false;
+        }
+        uint8_t buf[1024];
+        size_t n;
+        while ((n = in.read(buf, sizeof(buf))) > 0) {
+            if (out.write(buf, n) != n) {
+                in.close();
+                out.close();
+                return false;
+            }
+        }
+        in.close();
+        out.close();
+        return true;
+    }
+
     static bool streamInstall(const char *url, uint32_t expectedSize, const char *expectedSha256, fs::FS &fs,
-                              ProgressFn progress, void *ctx, bool *shaMismatch) {
+                              ProgressFn progress, void *ctx, bool *shaMismatch, const char *destRoot = kAssetsDir) {
         WiFiClientSecure client;
         BacTls::configure(client);
         HTTPClient http;
@@ -787,6 +1113,12 @@ private:
                 BacDebug::eventf("assets", "unsafe path %s", path);
                 return false;
             }
+            char remapped[200];
+            const char *writePath = path;
+            if (destRoot && strcmp(destRoot, kAssetsDir) != 0) {
+                snprintf(remapped, sizeof(remapped), "%s%s", destRoot, path + strlen(kAssetsDir));
+                writePath = remapped;
+            }
             uint8_t sizeBytes[4];
             if (!readHashed(*stream, http, sizeBytes, 4, sha)) {
                 http.end();
@@ -795,12 +1127,12 @@ private:
             }
             consumed += 4;
             uint32_t size = readLe32(sizeBytes);
-            if (!ensureParentDirs(fs, path)) {
+            if (!ensureParentDirs(fs, writePath)) {
                 http.end();
                 return false;
             }
             uint32_t tOpen = millis();
-            File out = fs.open(path, FILE_WRITE);
+            File out = fs.open(writePath, FILE_WRITE);
             openMs += millis() - tOpen;
             if (!out) {
                 http.end();
@@ -825,7 +1157,7 @@ private:
                 if (wrote != chunk) {
                     out.close();
                     http.end();
-                    BacDebug::eventf("assets", "write failed %s", path);
+                    BacDebug::eventf("assets", "write failed %s", writePath);
                     return false;
                 }
                 remaining -= (uint32_t)chunk;
@@ -867,7 +1199,12 @@ struct BacAssetsOta {
                                    const char * = nullptr, const char * = nullptr) {
         return false;
     }
+    static bool installPackFromBuffer(const uint8_t *, uint32_t, const char *, ProgressFn, void *, bool * = nullptr,
+                                      const char * = nullptr, const uint8_t * = nullptr, uint32_t = 0, bool = false) {
+        return false;
+    }
     static bool markerPresent() { return false; }
+    static bool manifestBufferValid(const uint8_t *, uint32_t) { return false; }
 };
 
 #endif
