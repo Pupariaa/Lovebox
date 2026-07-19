@@ -22,13 +22,23 @@ from lib.build import (
 from lib.config import BUILD_DIR, DEVICES_DIR
 from lib.identity import (
     create_new_identity,
+    ensure_registry_entry,
+    factory_reset_fields,
     load_device_file,
     load_registry,
     merge_runtime_config,
     parse_user_txt,
+    save_identity_fields,
+    update_registry_uuid,
     user_txt_content,
 )
 from lib.ports import choose_port, list_serial_ports
+
+MODES = {
+    "update": "Firmware only (NVS + FFAT preserved, WiFi/claim kept)",
+    "reset-same-ids": "Full flash, same serial + uuid, factory defaults in NVS",
+    "reset-new-ids": "Full flash, same serial, new uuid, factory defaults in NVS",
+}
 
 
 def resolve_identity(args) -> tuple[dict, str]:
@@ -57,6 +67,27 @@ def apply_runtime_config(identity_fields: dict, runtime_path: Path) -> dict:
     return merged
 
 
+def resolve_mode(args) -> str | None:
+    if args.mode:
+        return args.mode
+    if args.firmware_only:
+        return "update"
+    return None
+
+
+def prompt_mode() -> str:
+    print("Provisioning mode:")
+    for idx, (key, label) in enumerate(MODES.items(), start=1):
+        print(f"  {idx}. {key} — {label}")
+    choice = input("Choice [1]: ").strip() or "1"
+    keys = list(MODES.keys())
+    if choice.isdigit() and 1 <= int(choice) <= len(keys):
+        return keys[int(choice) - 1]
+    if choice in MODES:
+        return choice
+    raise SystemExit(f"invalid mode: {choice}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Provision BoiteACoeur (build + flash + archive)")
     parser.add_argument("--new", action="store_true", help="Generate new device identity")
@@ -67,9 +98,14 @@ def main() -> None:
     parser.add_argument("--build-only", action="store_true", help="Build and archive without flashing")
     parser.add_argument("--skip-flash", action="store_true", help="Build + archive only")
     parser.add_argument(
+        "--mode",
+        choices=list(MODES.keys()),
+        help="update | reset-same-ids | reset-new-ids (existing device)",
+    )
+    parser.add_argument(
         "--firmware-only",
         action="store_true",
-        help="Flash app partition only; keep NVS and FFAT (WiFi, claim, secrets)",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--runtime-config",
@@ -78,10 +114,19 @@ def main() -> None:
     )
     parser.add_argument("--list-ports", action="store_true", help="List serial ports and exit")
     parser.add_argument("--list-devices", action="store_true", help="List registry devices")
+    parser.add_argument("--list-modes", action="store_true", help="List provisioning modes")
     args = parser.parse_args()
 
-    if args.firmware_only and args.runtime_config:
-        raise SystemExit("--firmware-only and --runtime-config are mutually exclusive")
+    if args.list_modes:
+        for key, label in MODES.items():
+            print(f"{key}: {label}")
+        return
+
+    mode = resolve_mode(args)
+    if mode == "update" and args.runtime_config:
+        raise SystemExit("--runtime-config is not compatible with --mode update")
+    if mode in ("reset-same-ids", "reset-new-ids") and args.runtime_config:
+        raise SystemExit("use --runtime-config only for manual full reflash without --mode reset-*")
 
     if args.list_ports:
         for port in list_serial_ports():
@@ -103,8 +148,13 @@ def main() -> None:
             args.serial = input("Serial number: ").strip()
             if not args.serial:
                 raise SystemExit("serial required")
+            if mode is None:
+                mode = prompt_mode()
         else:
             args.new = True
+
+    if args.serial and mode is None and not args.new:
+        mode = prompt_mode()
 
     identity, user_txt = resolve_identity(args)
     serial = identity["serial_number"]
@@ -114,22 +164,23 @@ def main() -> None:
         raise SystemExit(str(exc)) from exc
     print(f"device: {serial}")
     print(f"firmware: {version}")
+    if mode:
+        print(f"mode: {mode} — {MODES[mode]}")
 
     compile_sketch(version)
-
     firmware = resolve_build_artifact("boite-a-coeur.ino.bin")
 
-    if args.firmware_only:
+    if mode == "update":
         port = choose_port(args.port) if not args.build_only and not args.skip_flash else (args.port or "N/A")
         artifacts = {"firmware": firmware}
-        archive_dir = archive_provision(serial, identity, version, port, artifacts, user_txt)
+        archive_dir = archive_provision(serial, identity, version, port, artifacts, user_txt, mode="update")
         print(f"archive: {archive_dir}")
         if args.build_only or args.skip_flash:
             print("build complete (no flash)")
             return
         flash_firmware_only(port, firmware)
-        print("firmware-only flash complete (NVS/FFAT preserved)")
-        print(json.dumps({"serial_number": serial, "firmware_version": version, "archive": str(archive_dir)}, indent=2))
+        print("update complete (NVS/FFAT preserved)")
+        print(json.dumps({"serial_number": serial, "firmware_version": version, "mode": mode, "archive": str(archive_dir)}, indent=2))
         return
 
     ffat_bin = BUILD_DIR / "ffat.bin"
@@ -137,12 +188,28 @@ def main() -> None:
 
     identity_fields = parse_user_txt(user_txt)
     identity_fields.setdefault("serial_number", serial)
-    if args.runtime_config:
+
+    if mode == "reset-same-ids":
+        identity_fields = factory_reset_fields(identity_fields, new_uuid=False)
+        save_identity_fields(serial, identity_fields)
+        user_txt = (DEVICES_DIR / f"{serial}.user.txt").read_text(encoding="utf-8")
+        identity["uuid"] = identity_fields["uuid"]
+        ensure_registry_entry(serial, identity_fields)
+    elif mode == "reset-new-ids":
+        identity_fields = factory_reset_fields(identity_fields, new_uuid=True)
+        save_identity_fields(serial, identity_fields)
+        user_txt = (DEVICES_DIR / f"{serial}.user.txt").read_text(encoding="utf-8")
+        identity["uuid"] = identity_fields["uuid"]
+        update_registry_uuid(serial, identity_fields["uuid"])
+        ensure_registry_entry(serial, identity_fields)
+        print(f"new uuid: {identity_fields['uuid']}")
+    elif args.runtime_config:
         runtime_path = Path(args.runtime_config)
         if not runtime_path.is_file():
             raise SystemExit(f"runtime config not found: {runtime_path}")
         identity_fields = apply_runtime_config(identity_fields, runtime_path)
-        user_txt = "\n".join(f"{k}: {v}" for k, v in identity_fields.items()) + "\n"
+        save_identity_fields(serial, identity_fields)
+        user_txt = (DEVICES_DIR / f"{serial}.user.txt").read_text(encoding="utf-8")
 
     nvs_bin = BUILD_DIR / "nvs.bin"
     build_nvs_image(identity_fields, nvs_bin)
@@ -157,7 +224,9 @@ def main() -> None:
     }
 
     port = choose_port(args.port) if not args.build_only and not args.skip_flash else (args.port or "N/A")
-    archive_dir = archive_provision(serial, identity, version, port, artifacts, user_txt)
+    archive_dir = archive_provision(
+        serial, identity, version, port, artifacts, user_txt, mode=mode or "full"
+    )
     print(f"archive: {archive_dir}")
 
     if args.build_only or args.skip_flash:
@@ -166,7 +235,7 @@ def main() -> None:
 
     flash_all(port, artifacts)
     print("provision complete")
-    print(json.dumps({"serial_number": serial, "firmware_version": version, "archive": str(archive_dir)}, indent=2))
+    print(json.dumps({"serial_number": serial, "firmware_version": version, "mode": mode or "full", "archive": str(archive_dir)}, indent=2))
 
 
 if __name__ == "__main__":
