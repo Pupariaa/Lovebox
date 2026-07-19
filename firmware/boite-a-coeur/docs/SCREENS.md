@@ -28,7 +28,7 @@ Screens come from Studio export (`Projet.h`) plus one firmware screen (`BacScree
 | `settings_wifi_error` | Internet test failed |
 | `settings_informations` | Device info |
 | `settings_factory_reset` | Factory reset confirm |
-| `settings_fatory_reseting` | Reset in progress (typo preserved in export) |
+| `settings_factory_reseting` | Reset in progress |
 
 ## Firmware screen
 
