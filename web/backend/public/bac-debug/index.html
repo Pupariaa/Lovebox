@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Boîte à Cœur — Assistance USB</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Figtree:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body class="grain">
+  <div class="ambient" aria-hidden="true"></div>
+
+  <div class="layout">
+    <aside class="rail">
+      <header class="brand-block">
+        <img src="../marketing/img/logo.png" alt="" width="48" height="48" class="brand-mark">
+        <div>
+          <p class="eyebrow">Assistance USB</p>
+          <h1>Boîte à Cœur</h1>
+        </div>
+      </header>
+
+      <p class="rail-intro">Branchez votre boîte en USB pour la vérifier ou la mettre à jour. Chrome ou Edge sur ordinateur.</p>
+
+      <nav class="steps" aria-label="Étapes">
+        <div class="step is-active" data-step="1">
+          <span class="step-dot"><span class="step-num">1</span></span>
+          <div class="step-copy">
+            <span class="step-label">Connexion</span>
+            <span class="step-hint">Port BAC-XS3</span>
+          </div>
+        </div>
+        <div class="step-line" id="stepLine1"></div>
+        <div class="step" data-step="2">
+          <span class="step-dot"><span class="step-num">2</span></span>
+          <div class="step-copy">
+            <span class="step-label">Diagnostic</span>
+            <span class="step-hint">État général</span>
+          </div>
+        </div>
+        <div class="step-line" id="stepLine2"></div>
+        <div class="step" data-step="3">
+          <span class="step-dot"><span class="step-num">3</span></span>
+          <div class="step-copy">
+            <span class="step-label">Mise à jour</span>
+            <span class="step-hint">Version officielle</span>
+          </div>
+        </div>
+      </nav>
+
+      <div class="rail-status">
+        <p class="rail-status-label">Activité</p>
+        <p id="activityLine" class="activity-line">En attente de connexion</p>
+      </div>
+
+      <button type="button" id="btnDisconnect" class="link-btn hidden" disabled>Déconnecter</button>
+    </aside>
+
+    <main class="workspace">
+      <section class="panel is-visible" id="panelConnect" data-panel="1">
+        <div class="panel-head">
+          <h2>Connecter la boîte</h2>
+          <p>Sélectionnez <strong>BAC-XS3</strong> dans la fenêtre qui s'ouvre.</p>
+        </div>
+
+        <div class="hero-zone">
+          <div class="status-ring" id="statusRing" data-state="idle">
+            <div class="status-core">
+              <svg class="status-icon" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 3a9 9 0 1 0 9 9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              </svg>
+              <span class="status-label" id="connState">En attente</span>
+            </div>
+          </div>
+
+          <button type="button" id="btnConnect" class="btn btn-main btn-wide">
+            <span class="btn-shine"></span>
+            Connecter ma Boîte à Cœur
+          </button>
+        </div>
+
+        <div id="deviceCard" class="device-card hidden">
+          <div class="device-card-glow"></div>
+          <dl class="device-meta">
+            <div><dt>Nom</dt><dd id="metaDevice">—</dd></div>
+            <div><dt>Numéro de série</dt><dd id="metaSerial">—</dd></div>
+            <div><dt>Version installée</dt><dd id="metaFw">—</dd></div>
+          </dl>
+        </div>
+      </section>
+
+      <section class="panel" id="panelDiagnose" data-panel="2">
+        <div class="panel-head">
+          <h2>Vérifier l'état</h2>
+          <p>Contrôle du réseau, de la mémoire et de la configuration.</p>
+        </div>
+
+        <div class="diagnose-stack">
+          <div id="analyzeLoader" class="analyze-loader hidden">
+            <div class="scan-bar"></div>
+            <p id="analyzeLoaderText">Analyse en cours…</p>
+          </div>
+
+          <button type="button" id="btnAnalyze" class="btn btn-main btn-wide" disabled>Lancer le diagnostic</button>
+
+          <div id="analyzeHero" class="result-banner hidden">
+            <div class="result-banner-icon" id="analyzeHeroIcon" aria-hidden="true"></div>
+            <div class="result-banner-copy">
+              <strong id="analyzeHeroTitle"></strong>
+              <span id="analyzeHeroText"></span>
+            </div>
+          </div>
+
+          <ul id="analyzeChecks" class="check-grid"></ul>
+
+          <button type="button" id="btnReanalyze" class="link-btn reanalyze-link hidden">Relancer le diagnostic</button>
+        </div>
+      </section>
+
+      <section class="panel" id="panelUpdate" data-panel="3">
+        <div class="panel-head">
+          <h2>Mettre à jour</h2>
+          <p>Installation d'une version officielle depuis nos serveurs.</p>
+        </div>
+
+        <label class="field">
+          <span>Version disponible</span>
+          <select id="releaseSelect" disabled>
+            <option value="">Connectez la boîte pour voir les versions</option>
+          </select>
+        </label>
+        <p id="fwMeta" class="fw-hint muted"></p>
+
+        <div class="update-actions">
+          <button type="button" id="btnFlash" class="btn btn-main btn-wide" disabled>Installer la mise à jour</button>
+          <button type="button" id="btnAbort" class="btn btn-ghost hidden" disabled>Annuler</button>
+        </div>
+
+        <div class="progress-panel hidden" id="progressWrap">
+          <div class="progress-head">
+            <span id="progressPct">0 %</span>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="progressBar"></div>
+          </div>
+          <p id="flashState" class="progress-caption"></p>
+        </div>
+      </section>
+
+      <details class="log-drawer">
+        <summary>Journal technique</summary>
+        <pre id="log" class="log"></pre>
+      </details>
+    </main>
+  </div>
+
+  <script src="js/app.js" type="module"></script>
+</body>
+</html>
