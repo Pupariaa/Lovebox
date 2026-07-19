@@ -11,6 +11,8 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 final class MessageController
 {
+    private const MAX_MESSAGE_BYTES = 3145728;
+
     public function __construct(private MessageService $messages)
     {
     }
@@ -20,7 +22,15 @@ final class MessageController
         $userId = (int) $request->getAttribute('user_id');
         $params = $request->getQueryParams();
         $targetId = (int) ($params['target_device_id'] ?? 0);
+
+        $declaredLen = (int) $request->getHeaderLine('Content-Length');
+        if ($declaredLen > self::MAX_MESSAGE_BYTES) {
+            return JsonResponse::error($response, 'message too large', 413);
+        }
         $body = $request->getBody()->getContents();
+        if (strlen($body) > self::MAX_MESSAGE_BYTES) {
+            return JsonResponse::error($response, 'message too large', 413);
+        }
         $parsed = (array) $request->getParsedBody();
         $scheduledAt = isset($params['scheduled_at'])
             ? (string) $params['scheduled_at']
@@ -48,6 +58,16 @@ final class MessageController
         $page = max(1, (int) ($params['page'] ?? 1));
         $perPage = min(50, max(1, (int) ($params['per_page'] ?? 20)));
         $items = $this->messages->listSent($userId, $page, $perPage);
+        return JsonResponse::ok($response, ['ok' => true, 'items' => $items]);
+    }
+
+    public function received(Request $request, Response $response): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $params = $request->getQueryParams();
+        $page = max(1, (int) ($params['page'] ?? 1));
+        $perPage = min(50, max(1, (int) ($params['per_page'] ?? 20)));
+        $items = $this->messages->listReceived($userId, $page, $perPage);
         return JsonResponse::ok($response, ['ok' => true, 'items' => $items]);
     }
 
