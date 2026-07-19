@@ -115,7 +115,7 @@ let deviceChunkMax = DEFAULT_CHUNK_BYTES;
 let deviceLineMax = BAC_MAX_LINE_DEFAULT;
 let activeSerialBaud = SERIAL_BAUD_FALLBACK;
 let deviceFwVersion = null;
-let deviceAnalyze = { otaBusy: false, modeIdle: true };
+let deviceAnalyze = { otaBusy: false, modeIdle: true, wifiLinked: false };
 let quietChunkLog = false;
 let serialExpectDisconnect = false;
 let lastProgressUiAt = 0;
@@ -182,6 +182,22 @@ function deviceChunkMaxFromPing(fields) {
   const n = parseInt(fields.chunk_max, 10);
   if (!Number.isFinite(n) || n < DEFAULT_CHUNK_BYTES) return DEFAULT_CHUNK_BYTES;
   return Math.min(MAX_CHUNK_BYTES, n);
+}
+
+function setInstallProgress(pct, { note = '' } = {}) {
+  const clamped = Math.max(0, Math.min(100, Math.round(pct)));
+  lastProgressUiAt = Date.now();
+  setProgressVisual(clamped);
+  flashState.textContent = `Installation assets (${clamped} %)`;
+  setFlashStatus(`Installation en cours sur la boîte… ${clamped} %`);
+  const defaultNote = clamped < 10
+    ? 'Effacement des anciens fichiers… plusieurs minutes sans trafic USB, c\'est normal.'
+    : 'Écriture FFat en cours · ne débranchez pas le câble USB.';
+  if (progressMetrics) progressMetrics.textContent = note || defaultNote;
+  livePct.textContent = `${clamped} %`;
+  liveBytes.textContent = 'Installation locale';
+  liveSpeed.textContent = '—';
+  liveEta.textContent = '—';
 }
 
 function setTransferProgress(sent, total, startedAt, { force = false } = {}) {
@@ -967,7 +983,7 @@ async function disconnect() {
   deviceLineMax = BAC_MAX_LINE_DEFAULT;
   activeSerialBaud = SERIAL_BAUD_FALLBACK;
   deviceFwVersion = null;
-  deviceAnalyze = { otaBusy: false, modeIdle: true };
+  deviceAnalyze = { otaBusy: false, modeIdle: true, wifiLinked: false };
   displayProgress = 0;
   lineWaiters.forEach((resolve) => resolve(''));
   lineWaiters = [];
@@ -1064,6 +1080,7 @@ async function runAnalyze({ auto = false, returnStep = null } = {}) {
 
     for (let i = 0; i < buffered.length; i++) {
       const item = buffered[i];
+      if (item.code === 'wifi_link') deviceAnalyze.wifiLinked = item.ok;
       if (item.code === 'ota_busy') deviceAnalyze.otaBusy = !item.ok;
       if (item.code === 'mode_idle') deviceAnalyze.modeIdle = item.ok;
       analyzeLoaderText.textContent = ANALYZE_STATUS[item.code] || 'Analyse en cours…';
@@ -1199,23 +1216,26 @@ async function waitForAnalyzeAssetsOk(timeoutMs = 20000) {
   return false;
 }
 
-async function waitForAssetsInstallDone(release, startedAt) {
+async function waitForAssetsInstallDone(release) {
   serialExpectDisconnect = true;
   const size = release.assets_size || 0;
-  const estimatedMs = Math.max(120000, Math.round(size / 12000) * 1000);
-  const deadline = Date.now() + Math.max(estimatedMs + 180000, 900000);
-  const installStartedAt = Date.now();
-  let lostAt = 0;
-  let lastReconnectAt = 0;
+  const estimatedMs = Math.max(240000, Math.round(size / 6000) * 1000);
+  const deadline = Date.now() + Math.max(estimatedMs + 600000, 1800000);
+  let lastSignalAt = Date.now();
+  let installPct = 0;
 
-  setFlashStatus('Installation en cours sur la boîte…');
+  setInstallProgress(0);
   pushLiveEvent('Écriture FFat en cours…', 'work');
 
   while (Date.now() < deadline) {
-    const line = await waitLine(400);
+    const line = await waitLine(1000);
     if (line) {
+      lastSignalAt = Date.now();
       if (line.startsWith('@BAC OK assets_complete')) {
         serialExpectDisconnect = false;
+        setInstallProgress(100);
+        await wait(300);
+        drainLineQueue();
         return;
       }
       if (line.startsWith('@BAC ERR')) {
@@ -1224,30 +1244,25 @@ async function waitForAssetsInstallDone(release, startedAt) {
       }
       if (line.startsWith('@BAC INFO assets_progress')) {
         const m = line.match(/pct=(\d+)/);
-        if (m) setTransferProgress(Number(m[1]), 100, startedAt, { force: true });
-        lostAt = 0;
+        if (m) {
+          installPct = Number(m[1]);
+          setInstallProgress(installPct);
+        }
         continue;
       }
-      if (line.startsWith('@BAC INFO assets_install')) continue;
-    } else if (!lostAt && Date.now() - installStartedAt > 8000) {
-      lostAt = Date.now();
-      pushLiveEvent('USB interrompu, attente fin installation…', 'warn');
+      if (line.startsWith('@BAC INFO assets_install') || line.startsWith('@BAC INFO assets_phase')) {
+        continue;
+      }
     }
 
-    const elapsed = Date.now() - installStartedAt;
-    const pct = Math.min(99, Math.round((elapsed / estimatedMs) * 100));
-    setTransferProgress(Math.round((size * pct) / 100), size, startedAt, { force: true });
-    setFlashStatus(`Installation en cours sur la boîte… ${pct} %`);
-
-    if (elapsed >= 10000 && Date.now() - lastReconnectAt >= 5000) {
-      lastReconnectAt = Date.now();
-      try {
-        await ensureSerialReady();
-        if (await waitForAnalyzeAssetsOk(12000)) {
-          serialExpectDisconnect = false;
-          return;
-        }
-      } catch (_) {}
+    const silentSec = Math.round((Date.now() - lastSignalAt) / 1000);
+    if (silentSec >= 20) {
+      const waitMin = Math.max(1, Math.round((deadline - Date.now()) / 60000));
+      setInstallProgress(installPct, {
+        note: installPct > 0
+          ? `Écriture FFat ${installPct} % · pas de trafic USB depuis ${silentSec} s, c'est normal.`
+          : `Préparation FFat… jusqu'à ~${waitMin} min sans signal USB, ne débranchez pas le câble.`,
+      });
     }
   }
 
@@ -1390,8 +1405,8 @@ async function flashAssetsToDevice(release) {
   setFlashStatus('Installation assets sur la boîte…');
   pushLiveEvent('Écriture FFat et vérification…', 'work');
   await sendBac('ASSETS_END');
-  await waitForAssetsInstallDone(release, startedAt);
-  setTransferProgress(size, size, startedAt, { force: true });
+  await waitForAssetsInstallDone(release);
+  setInstallProgress(100);
   quietChunkLog = false;
 }
 
@@ -1404,7 +1419,7 @@ async function flashFromServer(release) {
     return;
   }
 
-  if (deviceAnalyze.otaBusy) {
+  if (deviceAnalyze.otaBusy && deviceAnalyze.wifiLinked) {
     alert('La boîte signale une mise à jour cloud en cours.\nCoupez le Wi-Fi (ou attendez la fin) avant l\'installation USB.');
     return;
   }
@@ -1461,6 +1476,8 @@ async function flashFromServer(release) {
         if (progressMetrics) progressMetrics.textContent = '';
         setFlashStatus('Préparation du firmware…');
         pushLiveEvent('Préparation firmware…', 'work');
+        await wait(500);
+        drainLineQueue();
         await ensureSerialReady();
       }
     }
