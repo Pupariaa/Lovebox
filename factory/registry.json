@@ -18,7 +18,148 @@
       ],
       "last_firmware_version": "1.0.22",
       "last_provisioned_at": "20260718T193137Z"
+    },
+    {
+      "device_name": "BaCxs32m2326",
+      "serial_number": "BACXS32M23262026R2",
+      "uuid": "21376641074608255291642424074752621537273035483153659876194498267286735707090218121192838581644186578834165697228999871469903756",
+      "built_at": "2026-07-19T03:43:20.723802Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32M23262026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T034647Z",
+          "firmware_version": "1.0.22",
+          "archive_dir": "factory/archives/BACXS32M23262026R2/20260719T034647Z",
+          "port": "COM120",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.22",
+      "last_provisioned_at": "20260719T034647Z"
+    },
+    {
+      "device_name": "BaCxs32k2327",
+      "serial_number": "BACXS32K23272026R2",
+      "uuid": "97376048791038431244405173975892946039085132061983659799205255117248980316851229680905386339706478285130006483619422558552957976",
+      "built_at": "2026-07-19T03:48:54.755784Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32K23272026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T034910Z",
+          "firmware_version": "1.0.22",
+          "archive_dir": "factory/archives/BACXS32K23272026R2/20260719T034910Z",
+          "port": "COM133",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.22",
+      "last_provisioned_at": "20260719T034910Z"
+    },
+    {
+      "device_name": "BaCxs32k2328",
+      "serial_number": "BACXS32K23282026R2",
+      "uuid": "61782443986787339271304719710742126201191804240197872140099639046129122021618577755033744841383784119669832141220412079579998028",
+      "built_at": "2026-07-19T03:49:17.370001Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32K23282026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T034933Z",
+          "firmware_version": "1.0.22",
+          "archive_dir": "factory/archives/BACXS32K23282026R2/20260719T034933Z",
+          "port": "COM133",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.22",
+      "last_provisioned_at": "20260719T034933Z"
+    },
+    {
+      "device_name": "BaCxs32s2329",
+      "serial_number": "BACXS32S23292026R2",
+      "uuid": "69373959882575032946426490002060500662485163083017920374872182040880032080463396624207851636141397398013730884042334486935346589",
+      "built_at": "2026-07-19T03:49:54.421969Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32S23292026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T035009Z",
+          "firmware_version": "1.0.22",
+          "archive_dir": "factory/archives/BACXS32S23292026R2/20260719T035009Z",
+          "port": "COM133",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.22",
+      "last_provisioned_at": "20260719T035009Z"
+    },
+    {
+      "device_name": "BaCxs32m2330",
+      "serial_number": "BACXS32M23302026R2",
+      "uuid": "05043577843300137199269583345090170223649495497344240616116099807632175353112116547603932120839208391859421076426378826826515396",
+      "built_at": "2026-07-19T04:21:10.132160Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32M23302026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T042147Z",
+          "firmware_version": "1.0.22",
+          "archive_dir": "factory/archives/BACXS32M23302026R2/20260719T042147Z",
+          "port": "COM133",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.22",
+      "last_provisioned_at": "20260719T042147Z"
+    },
+    {
+      "device_name": "BaCxs32p2331",
+      "serial_number": "BACXS32P23312026R2",
+      "uuid": "98459690194582039194581825122174611966483173800428480065226363260704653886016127698242336312296907845559467225531345953913041241",
+      "built_at": "2026-07-19T05:06:30.659907Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32P23312026R2.user.txt"
+    },
+    {
+      "device_name": "BaCxs32k2332",
+      "serial_number": "BACXS32K23322026R2",
+      "uuid": "85537989901364494977971226874112138936514157871723725819294689846830432589707956747439679381738038798874241602250361685749964739",
+      "built_at": "2026-07-19T05:08:32.870158Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32K23322026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T050906Z",
+          "firmware_version": "1.0.33",
+          "archive_dir": "factory/archives/BACXS32K23322026R2/20260719T050906Z",
+          "port": "COM132",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.33",
+      "last_provisioned_at": "20260719T050906Z"
+    },
+    {
+      "device_name": "BaCxs32c2333",
+      "serial_number": "BACXS32C23332026R2",
+      "uuid": "47696808233749760994937084768920328262027978663065129904099588593513965233091311661605080424393830253181286855848804979632015429",
+      "built_at": "2026-07-19T05:11:49.787241Z",
+      "batch": "2026-07",
+      "device_file": "factory/devices/BACXS32C23332026R2.user.txt",
+      "provision_history": [
+        {
+          "provisioned_at": "20260719T051203Z",
+          "firmware_version": "1.0.33",
+          "archive_dir": "factory/archives/BACXS32C23332026R2/20260719T051203Z",
+          "port": "COM81",
+          "manifest": "manifest.json"
+        }
+      ],
+      "last_firmware_version": "1.0.33",
+      "last_provisioned_at": "20260719T051203Z"
     }
   ],
-  "next_suffix": 2326
+  "next_suffix": 2334
 }
