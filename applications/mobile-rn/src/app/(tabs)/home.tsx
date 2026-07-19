@@ -3,7 +3,7 @@ import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AppText, Button, Card, Screen, StatusPill } from "@/components/ui";
-import { requestBluetoothPermissions } from "@/data/ble/permissions";
+import { ensureBleAccess } from "@/data/ble/blePermissionStatus";
 import { useAppStore } from "@/store/appStore";
 import { colors, radius, spacing } from "@/theme/theme";
 import { deviceLabel, formatDateTime, formatLastSeen, targetLabel } from "@/util/formatters";
@@ -11,7 +11,7 @@ import { deviceLabel, formatDateTime, formatLastSeen, targetLabel } from "@/util
 export default function HomeScreen() {
   const router = useRouter();
   const loading = useAppStore((s) => s.loading);
-  const myDevice = useAppStore((s) => s.myDevice);
+  const devices = useAppStore((s) => s.devices);
   const linkedTargets = useAppStore((s) => s.linkedTargets);
   const selectedTarget = useAppStore((s) => s.selectedTarget);
   const userProfile = useAppStore((s) => s.userProfile);
@@ -34,10 +34,9 @@ export default function HomeScreen() {
   const lastMessage = history[0];
 
   const openBle = async () => {
-    const granted = await requestBluetoothPermissions();
-    if (!granted) {
-      showSnackbar("Autorisations Bluetooth requises");
-      return;
+    const status = await ensureBleAccess();
+    if (!status.canScan) {
+      showSnackbar(status.state === "bluetooth_off" ? "Active le Bluetooth." : "Autorisations Bluetooth requises.");
     }
     router.push("/ble");
   };
@@ -49,38 +48,48 @@ export default function HomeScreen() {
         refreshControl={
           <RefreshControl
             refreshing={loading}
-            onRefresh={refreshState}
+            onRefresh={() => {
+              void refreshState(true);
+              void loadHistory(true);
+            }}
             tintColor={colors.rosePrimary}
           />
         }
       >
-        {!myDevice ? (
+        {devices.length === 0 ? (
           <Card>
             <View style={styles.cardHeader}>
               <Ionicons name="cube" size={22} color={colors.rosePrimary} />
               <AppText variant="headlineMedium">Configure ta boîte</AppText>
             </View>
             <AppText variant="bodyMedium" muted style={styles.paragraph}>
-              Connecte ta boîte à cœur au WiFi pour commencer à recevoir ses petits mots.
+              Connecte ta boîte à cœur au WiFi pour commencer à recevoir des petits mots.
             </AppText>
-            <Button label="Configurer ma boîte" onPress={openBle} icon={<Ionicons name="bluetooth" size={18} color={colors.onPrimary} />} />
+            <Button label="Ajouter une boîte" onPress={openBle} icon={<Ionicons name="bluetooth" size={18} color={colors.onPrimary} />} />
           </Card>
         ) : (
-          <Card onPress={() => router.push(`/device/${myDevice.id}`)} highlight>
-            <View style={styles.deviceRow}>
-              <View style={styles.deviceIcon}>
-                <Ionicons name="cube" size={24} color={colors.rosePrimary} />
-              </View>
-              <View style={styles.flex}>
-                <AppText variant="titleMedium">{deviceLabel(myDevice)}</AppText>
-                <StatusPill
-                  online={myDevice.online}
-                  label={formatLastSeen(myDevice.online, myDevice.last_seen_seconds_ago)}
-                />
-              </View>
-              <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
-            </View>
-          </Card>
+          <>
+            {devices.map((device) => (
+              <Card key={device.id} onPress={() => router.push(`/device/${device.id}`)} highlight>
+                <View style={styles.deviceRow}>
+                  <View style={styles.deviceIcon}>
+                    <Ionicons name="cube" size={24} color={colors.rosePrimary} />
+                  </View>
+                  <View style={styles.flex}>
+                    <AppText variant="titleMedium">{deviceLabel(device)}</AppText>
+                    <StatusPill
+                      online={device.online}
+                      label={formatLastSeen(device.online, device.last_seen_seconds_ago)}
+                    />
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+                </View>
+              </Card>
+            ))}
+            {devices.length > 1 ? (
+              <Button label="Gérer mes boîtes" variant="secondary" onPress={() => router.push("/boxes")} />
+            ) : null}
+          </>
         )}
 
         {target ? (
@@ -102,7 +111,7 @@ export default function HomeScreen() {
           <Card>
             <View style={styles.cardHeader}>
               <Ionicons name="heart" size={22} color={colors.rosePrimary} />
-              <AppText variant="headlineMedium">Lie un être cher</AppText>
+              <AppText variant="headlineMedium">Lier un être cher</AppText>
             </View>
             <AppText variant="bodyMedium" muted style={styles.paragraph}>
               Ajoute un être cher pour lui envoyer des mots doux sur sa boîte.
