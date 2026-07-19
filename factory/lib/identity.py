@@ -51,7 +51,9 @@ def user_txt_content(device_name: str, serial: str, uuid: str) -> str:
         f"build_year: {year}\n"
         f"build_semester: {semester()}\n"
         f"hw_revision: BaC-S3-v1\n"
-        f"api_url: https://boite-a-coeur.techalchemy.fr\n"
+        f"api_url: https://boite-a-coeur.fr\n"
+        f"api_url_b1: https://update.bac-tcy.com\n"
+        f"api_url_b2: https://update.tcy-services.com\n"
         f"api_secret:\n"
         f"region:\n"
         f"old_boot_status:\n"
@@ -81,6 +83,8 @@ def merge_runtime_config(base: dict, runtime: dict) -> dict:
         "psw",
         "api_secret",
         "api_url",
+        "api_url_b1",
+        "api_url_b2",
         "region",
         "locale",
         "display_name",
@@ -125,6 +129,83 @@ def create_new_identity(suffix: int | None = None) -> dict:
     data["next_suffix"] = use_suffix + 1
     save_registry(data)
     return entry
+
+
+def fields_to_user_txt(fields: dict) -> str:
+    order = [
+        "device_name",
+        "factory_device_name",
+        "display_name",
+        "serial_number",
+        "ssid",
+        "psw",
+        "configured",
+        "uuid",
+        "locale",
+        "build_year",
+        "build_semester",
+        "hw_revision",
+        "api_url",
+        "api_url_b1",
+        "api_url_b2",
+        "api_secret",
+        "region",
+        "old_boot_status",
+        "claimed",
+    ]
+    lines: list[str] = []
+    seen = set()
+    for key in order:
+        if key in fields:
+            lines.append(f"{key}: {fields[key]}")
+            seen.add(key)
+    for key, val in fields.items():
+        if key not in seen:
+            lines.append(f"{key}: {val}")
+    return "\n".join(lines) + "\n"
+
+
+def factory_reset_fields(identity_fields: dict, *, new_uuid: bool) -> dict:
+    out = dict(identity_fields)
+    if new_uuid:
+        out["uuid"] = generate_uuid()
+    out["configured"] = "0"
+    out["claimed"] = "0"
+    out["ssid"] = ""
+    out["psw"] = ""
+    out["api_secret"] = ""
+    return out
+
+
+def save_identity_fields(serial: str, fields: dict) -> Path:
+    content = fields_to_user_txt(fields)
+    return write_device_file(serial, content)
+
+
+def update_registry_uuid(serial: str, uuid: str) -> None:
+    data = load_registry()
+    for box in data["boxes"]:
+        if box.get("serial_number", "").upper() == serial.upper():
+            box["uuid"] = uuid
+            save_registry(data)
+            return
+
+
+def ensure_registry_entry(serial: str, identity_fields: dict) -> None:
+    data = load_registry()
+    for box in data["boxes"]:
+        if box.get("serial_number", "").upper() == serial.upper():
+            return
+    entry = {
+        "device_name": identity_fields.get("device_name", ""),
+        "serial_number": serial,
+        "uuid": identity_fields.get("uuid", ""),
+        "built_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "batch": datetime.now().strftime("%Y-%m"),
+        "device_file": f"factory/devices/{serial}.user.txt",
+    }
+    data["boxes"].append(entry)
+    save_registry(data)
 
 
 def find_registry_entry(serial: str) -> dict | None:
