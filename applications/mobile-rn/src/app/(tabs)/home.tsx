@@ -3,14 +3,14 @@ import { RefreshControl, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AppText, Button, Card, Screen, StatusPill } from "@/components/ui";
-import { ensureBleAccess } from "@/data/ble/blePermissionStatus";
-import { useAppStore } from "@/store/appStore";
+import { bleAccessMessage, ensureBleAccess } from "@/data/ble/blePermissionStatus";
+import { useAppStore, useLoading } from "@/store/appStore";
 import { colors, radius, spacing } from "@/theme/theme";
 import { deviceLabel, formatDateTime, formatLastSeen, targetLabel } from "@/util/formatters";
 
 export default function HomeScreen() {
   const router = useRouter();
-  const loading = useAppStore((s) => s.loading);
+  const loading = useLoading("refresh");
   const devices = useAppStore((s) => s.devices);
   const linkedTargets = useAppStore((s) => s.linkedTargets);
   const selectedTarget = useAppStore((s) => s.selectedTarget);
@@ -36,7 +36,8 @@ export default function HomeScreen() {
   const openBle = async () => {
     const status = await ensureBleAccess();
     if (!status.canScan) {
-      showSnackbar(status.state === "bluetooth_off" ? "Active le Bluetooth." : "Autorisations Bluetooth requises.");
+      showSnackbar(bleAccessMessage(status.state) || "Autorisations Bluetooth requises.");
+      return;
     }
     router.push("/ble");
   };
