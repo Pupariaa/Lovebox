@@ -6,11 +6,14 @@ namespace Bac\Services;
 
 use Bac\Repositories\DeviceCommandRepository;
 use Bac\Repositories\DeviceRepository;
+use Bac\Support\AttemptLimiter;
 use Bac\Support\TokenUtil;
 
 final class DeviceService
 {
     private const DEVICE_LOCALES = ['fr', 'en', 'it', 'de', 'pt', 'es'];
+    private const CLAIM_MAX_ATTEMPTS = 8;
+    private const CLAIM_WINDOW_SECONDS = 900;
 
     public function __construct(
         private DeviceRepository $devices,
@@ -44,18 +47,14 @@ final class DeviceService
         $newSecretPlain = null;
 
         if ($existing) {
-            if (!empty($existing['secret_hash']) && $existing['uuid'] === $uuid) {
-                if ($secret && password_verify($secret, $existing['secret_hash'])) {
-                } elseif ($secret) {
-                    throw new \InvalidArgumentException('invalid device secret');
-                } elseif (strcasecmp((string) $existing['serial_number'], $serial) === 0) {
-                    $newSecretPlain = TokenUtil::randomHex(32);
-                } else {
+            if (!empty($existing['secret_hash'])) {
+                if ($secret === null || !password_verify($secret, $existing['secret_hash'])) {
                     throw new \InvalidArgumentException('invalid device secret');
                 }
-            } elseif (empty($existing['secret_hash']) && strcasecmp((string) $existing['serial_number'], $serial) === 0) {
-                // Secret was revoked (e.g. after unclaim); re-issue a fresh one for this box.
+            } elseif (strcasecmp((string) $existing['serial_number'], $serial) === 0) {
                 $newSecretPlain = TokenUtil::randomHex(32);
+            } else {
+                throw new \InvalidArgumentException('serial_number mismatch');
             }
             $update = [
                 'uuid' => $uuid,
@@ -121,6 +120,28 @@ final class DeviceService
 
     public function claim(int $userId, string $uuid, string $serialNumber): array
     {
+        $lockKey = (string) $userId;
+        if (AttemptLimiter::tooMany('device-claim', $lockKey, self::CLAIM_MAX_ATTEMPTS, self::CLAIM_WINDOW_SECONDS)) {
+            throw new \InvalidArgumentException('too many claim attempts, try again later');
+        }
+        try {
+            $device = $this->resolveClaimTarget($userId, $uuid, $serialNumber);
+        } catch (\InvalidArgumentException $e) {
+            AttemptLimiter::hit('device-claim', $lockKey, self::CLAIM_WINDOW_SECONDS);
+            throw $e;
+        }
+        AttemptLimiter::reset('device-claim', $lockKey);
+        if ($device['owner_user_id'] === null) {
+            if (!$this->devices->claim((int) $device['id'], $userId)) {
+                throw new \InvalidArgumentException('claim failed');
+            }
+            $this->ota->enqueueForDevice((int) $device['id']);
+        }
+        return $this->formatDevice($this->devices->findById((int) $device['id']));
+    }
+
+    private function resolveClaimTarget(int $userId, string $uuid, string $serialNumber): array
+    {
         $uuid = trim($uuid);
         $serialNumber = trim($serialNumber);
         if (strlen($uuid) !== 128 || !ctype_digit($uuid)) {
@@ -139,6 +160,9 @@ final class DeviceService
         if (strcasecmp($device['serial_number'], $serialNumber) !== 0) {
             throw new \InvalidArgumentException('serial_number mismatch');
         }
+        if (empty($device['secret_hash']) && $device['owner_user_id'] === null) {
+            throw new \InvalidArgumentException('device not ready, power it on and connect it first');
+        }
         if ($device['uuid'] !== $uuid && $device['owner_user_id'] === null) {
             $this->devices->update((int) $device['id'], ['uuid' => $uuid]);
             $device = $this->devices->findById((int) $device['id']);
@@ -146,13 +170,7 @@ final class DeviceService
         if ($device['owner_user_id'] !== null && (int) $device['owner_user_id'] !== $userId) {
             throw new \InvalidArgumentException('device already claimed');
         }
-        if ($device['owner_user_id'] === null) {
-            if (!$this->devices->claim((int) $device['id'], $userId)) {
-                throw new \InvalidArgumentException('claim failed');
-            }
-            $this->ota->enqueueForDevice((int) $device['id']);
-        }
-        return $this->formatDevice($this->devices->findById((int) $device['id']));
+        return $device;
     }
 
     public function listOwned(int $userId): array
@@ -217,13 +235,9 @@ final class DeviceService
         if (!$this->devices->unclaim($deviceId, $userId)) {
             throw new \InvalidArgumentException('unclaim failed');
         }
-        // Rotate the device credential so a captured secret cannot keep authenticating after
-        // the box leaves this owner. The box re-registers and receives a fresh secret.
         $this->devices->revokeSecret($deviceId);
     }
 
-    // Full deletion of an owned device row. Cascades remove pairings, messages, logs and commands.
-    // A factory_reset command is enqueued first so the physical box wipes itself when it next polls.
     public function deleteOwned(int $userId, int $deviceId): void
     {
         $device = $this->devices->findOwnedByUser($userId, $deviceId);
@@ -238,7 +252,6 @@ final class DeviceService
         }
     }
 
-    // Device-initiated self-deletion (called by firmware at the end of an on-device factory reset).
     public function deregister(array $device): void
     {
         $this->devices->deleteById((int) $device['id']);
