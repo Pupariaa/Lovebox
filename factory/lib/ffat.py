@@ -1,4 +1,5 @@
 import binascii
+import hashlib
 import random
 import struct
 import subprocess
@@ -80,11 +81,45 @@ def wrap_wl(plain: bytes, partition_size: int) -> bytes:
     return image
 
 
+def write_local_manifest(assets_dir: Path) -> None:
+    # Seeds /assets/.manifest so the first OTA after a factory flash is differential
+    # instead of re-downloading the whole pack. Format matches BacAssetsOta's reader:
+    # 'BACX' + u32 version + u32 count, then per entry pathLen(u16) path size(u32)
+    # offset(u32) sha256(32). offset is unused for the on-device baseline, so it is 0.
+    if not assets_dir.is_dir():
+        return
+    entries = []
+    for p in sorted(assets_dir.rglob("*")):
+        if not p.is_file() or p.name.startswith("."):
+            continue
+        rel = p.relative_to(assets_dir).as_posix()
+        path = "/assets/" + rel
+        data = p.read_bytes()
+        entries.append((path, len(data), hashlib.sha256(data).digest()))
+    entries.sort(key=lambda e: e[0].encode("utf-8"))
+
+    out = bytearray()
+    out += b"BACX"
+    out += struct.pack("<I", 1)
+    out += struct.pack("<I", len(entries))
+    for path, size, sha in entries:
+        pb = path.encode("utf-8")
+        out += struct.pack("<H", len(pb))
+        out += pb
+        out += struct.pack("<I", size)
+        out += struct.pack("<I", 0)
+        out += sha
+    (assets_dir / ".manifest").write_bytes(out)
+    print(f"ffat manifest: {len(entries)} assets")
+
+
 def build_ffat_image(mkfatfs: Path, data_dir: Path, output: Path, partition_size: int) -> None:
     if not mkfatfs.exists():
         raise FileNotFoundError(f"mkfatfs not found: {mkfatfs}")
     if not data_dir.is_dir():
         raise FileNotFoundError(f"data dir missing: {data_dir}")
+
+    write_local_manifest(data_dir / "assets")
 
     plain_size = plain_fat_bytes(partition_size)
     plain_tmp = output.with_suffix(".plain.bin")
