@@ -1,8 +1,20 @@
-import { Tabs } from "expo-router";
+import { Redirect, Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useAppStore } from "@/store/appStore";
 import { colors } from "@/theme/theme";
 
 export default function TabsLayout() {
+  const isLoggedIn = useAppStore((s) => s.isLoggedIn);
+  const userProfile = useAppStore((s) => s.userProfile);
+
+  if (!isLoggedIn) {
+    return <Redirect href="/auth" />;
+  }
+
+  if (userProfile && userProfile.profile_complete === false) {
+    return <Redirect href="/onboarding/profile" />;
+  }
+
   return (
     <Tabs
       screenOptions={{
