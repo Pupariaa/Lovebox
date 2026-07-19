@@ -10,6 +10,7 @@
 #include "BacSysInfo.h"
 #include "BacTouch.h"
 #include "BacUsbIdentity.h"
+#include "BacWatchdog.h"
 #include "LoveboxFramePacer.h"
 #include <esp_task_wdt.h>
 #endif
@@ -32,6 +33,9 @@ void setup() {
 #if defined(ESP32)
   BacUsbIdentity::begin();
 #endif
+#if defined(ESP32)
+  Serial.setRxBufferSize(4096);
+#endif
   Serial.begin(115200);
 
 #if defined(ESP32)
@@ -51,8 +55,7 @@ void setup() {
 
   if (!display.begin(projet::displayPins(), projet::displayOptions(), buffer,
                      &SPI)) {
-    BacDebug::reply("display init failed");
-    return;
+    BacDebug::reply("display init failed, continuing for wifi/ble/ota recovery");
   }
 
   projet::build(ui);
@@ -62,17 +65,30 @@ void setup() {
     BacDebug::reply("warning: volume assets unavailable");
   }
 
+#if defined(ESP32)
+  BacAssetsOta::bootIntegrityCheck();
+#endif
+
   ui.begin();
 
   screenCache.begin(ui, &projet::screen_scr_mqxozray1);
   app.begin(ui, screenCache);
-  app.onCacheReady();
+  app.beginBootFlow();
   projet::attachInput(ui);
   framePacer.begin(TARGET_FPS);
 }
 
 void loop() {
 #if defined(ESP32)
+  if (app.isUsbFlashActive()) {
+    serialConsole.poll(app);
+    BacWatchdog::feed();
+    if (app.consumeUsbFlashUiPulse()) {
+      ui.update();
+      app.notifyUiRendered();
+    }
+    return;
+  }
   serialConsole.poll(app);
   BacSysInfo::tick();
   uint32_t touchVal = touch.read();
@@ -81,6 +97,7 @@ void loop() {
     ui.update();
     app.drawMessageOverlay(display);
     projet::update();
+    app.notifyUiRendered();
   }
   framePacer.setFps(app.targetFps() == 0 ? 1 : app.targetFps());
   framePacer.wait();
