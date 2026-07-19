@@ -10,6 +10,8 @@ use Firebase\JWT\Key;
 final class JwtService
 {
     private string $secret;
+    private string $issuer;
+    private string $audience;
     private int $accessTtl;
     private int $refreshTtl;
 
@@ -17,6 +19,8 @@ final class JwtService
     {
         $settings = require dirname(__DIR__, 2) . '/config/settings.php';
         $this->secret = $settings['jwt']['secret'];
+        $this->issuer = $settings['jwt']['issuer'];
+        $this->audience = $settings['jwt']['audience'];
         $this->accessTtl = $settings['jwt']['access_ttl'];
         $this->refreshTtl = $settings['jwt']['refresh_ttl'];
     }
@@ -35,6 +39,8 @@ final class JwtService
     {
         $now = time();
         return JWT::encode([
+            'iss' => $this->issuer,
+            'aud' => $this->audience,
             'sub' => $userId,
             'email' => $email,
             'type' => 'access',
@@ -49,6 +55,14 @@ final class JwtService
             $decoded = JWT::decode($token, new Key($this->secret, 'HS256'));
             $payload = (array) $decoded;
             if (($payload['type'] ?? '') !== 'access') {
+                return null;
+            }
+            if (($payload['iss'] ?? '') !== $this->issuer) {
+                return null;
+            }
+            $audience = $payload['aud'] ?? '';
+            $audiences = is_array($audience) ? $audience : [$audience];
+            if (!in_array($this->audience, array_map('strval', $audiences), true)) {
                 return null;
             }
             return $payload;
