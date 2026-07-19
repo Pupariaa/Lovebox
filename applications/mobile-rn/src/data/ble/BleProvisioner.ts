@@ -68,7 +68,7 @@ export class BleProvisioner {
     await new Promise<void>((resolve, reject) => {
       const timer = setTimeout(() => {
         sub.remove();
-        reject(new Error("Bluetooth desactive"));
+        reject(new Error("Bluetooth désactivé."));
       }, timeoutMs);
       const sub = this.manager.onStateChange((next) => {
         if (next === State.PoweredOn) {
@@ -98,11 +98,20 @@ export class BleProvisioner {
         }
         if (!device || !matchesBox(device)) return;
         found.set(device.id, {
-          name: device.name ?? device.localName ?? "BoiteACoeur",
+          name: device.name ?? device.localName ?? "Boîte à cœur",
           address: device.id,
         });
       });
     });
+  }
+
+  async connectDirect(address: string, deviceName: string): Promise<boolean> {
+    try {
+      await this.connect(address, deviceName);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async connect(address: string, deviceName: string): Promise<void> {
@@ -110,6 +119,8 @@ export class BleProvisioner {
     await device.discoverAllServicesAndCharacteristics();
     this.device = device;
     this.identity = await this.readIdentity(device, deviceName);
+    const { saveStoredBleDevice } = await import("@/data/storage/bleDeviceStorage");
+    await saveStoredBleDevice(this.identity?.deviceName ?? deviceName, address);
     await delay(600);
   }
 
@@ -168,6 +179,27 @@ export class BleProvisioner {
       `${displayName.trim()}|${locale.trim()}|${region.trim()}`,
       191,
     );
+    await delay(250);
+  }
+
+  async sendBoxSettings(
+    displayName: string,
+    locale: string,
+    region: string,
+    backlightLevel: number,
+    sleepTimeoutSec: number,
+    displaySleepEnabled: boolean,
+  ): Promise<void> {
+    const payload = [
+      displayName.trim(),
+      locale.trim(),
+      region.trim(),
+      String(Math.max(0, Math.min(100, Math.round(backlightLevel)))),
+      String(Math.max(5, Math.min(600, Math.round(sleepTimeoutSec)))),
+      displaySleepEnabled ? "1" : "0",
+    ].join("|");
+    await this.writeChar(AppConfig.BLE_CONFIG_CHAR_UUID, payload, 191);
+    await delay(250);
   }
 
   async awaitWifiResult(timeoutMs = 90000): Promise<boolean> {
