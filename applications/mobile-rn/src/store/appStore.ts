@@ -27,6 +27,22 @@ export enum BleProvisionPhase {
   Failed = "failed",
 }
 
+export type LoadingOp =
+  | "auth"
+  | "refresh"
+  | "scan"
+  | "provision"
+  | "claim"
+  | "pairing"
+  | "saveSettings"
+  | "deviceAction"
+  | "send"
+  | "history"
+  | "received"
+  | "profile";
+
+const PROVISION_CANCELLED = "provisioning cancelled";
+
 const CLAIM_RETRY_COUNT = 24;
 const CLAIM_RETRY_DELAY_MS = 3000;
 const CLAIM_INITIAL_DELAY_MS = 2000;
@@ -75,7 +91,9 @@ function bleConnectError(error: unknown): string {
 
 type AppState = {
   isLoggedIn: boolean;
-  loading: boolean;
+  loadingOps: Partial<Record<LoadingOp, boolean>>;
+  isOnline: boolean;
+  bleLiveSettingsError: string | null;
   snackbarMessage: string | null;
 
   devices: DeviceDto[];
@@ -108,6 +126,7 @@ type AppState = {
 
   showSnackbar: (message: string) => void;
   clearSnackbar: () => void;
+  setNetworkOnline: (online: boolean) => void;
   bootstrap: () => Promise<boolean>;
   login: (email: string, password: string) => Promise<boolean>;
   register: (email: string, password: string, firstName: string) => Promise<boolean>;
@@ -126,6 +145,7 @@ type AppState = {
     ssid: string,
     password: string,
   ) => Promise<boolean>;
+  cancelBleProvision: () => Promise<void>;
   retryClaimAfterProvision: () => Promise<boolean>;
   generatePairingCode: () => Promise<void>;
   markPairingCodeCopied: () => void;
@@ -232,6 +252,17 @@ async function loadRemoteState(
 }
 
 export const useAppStore = create<AppState>((set, get) => {
+  let provisionCancelRequested = false;
+
+  const setOp = (op: LoadingOp, value: boolean) => {
+    set({ loadingOps: { ...get().loadingOps, [op]: value } });
+  };
+
+  const isProvisionCancelled = (error: unknown): boolean => {
+    if (provisionCancelRequested) return true;
+    return error instanceof Error && error.message === PROVISION_CANCELLED;
+  };
+
   const clearSession = () => {
     void api.clearLocalSession();
     lastRefreshStateAt = 0;
@@ -263,11 +294,13 @@ export const useAppStore = create<AppState>((set, get) => {
     }
     await delay(CLAIM_INITIAL_DELAY_MS);
     for (let attempt = 0; attempt < CLAIM_RETRY_COUNT; attempt++) {
+      if (provisionCancelRequested) throw new Error(PROVISION_CANCELLED);
       set({ bleProvisionPhase: BleProvisionPhase.LinkingAccount });
       try {
         await api.claimDevice(uuid, serialNumber);
         return;
       } catch (error) {
+        if (provisionCancelRequested) throw new Error(PROVISION_CANCELLED);
         if (isClaimRetryable(error) && attempt < CLAIM_RETRY_COUNT - 1) {
           await delay(CLAIM_RETRY_DELAY_MS);
         } else {
@@ -279,7 +312,9 @@ export const useAppStore = create<AppState>((set, get) => {
 
   return {
     isLoggedIn: false,
-    loading: false,
+    loadingOps: {},
+    isOnline: true,
+    bleLiveSettingsError: null,
     snackbarMessage: null,
     devices: [],
     myDevice: null,
@@ -308,6 +343,9 @@ export const useAppStore = create<AppState>((set, get) => {
 
     showSnackbar: (message) => set({ snackbarMessage: message }),
     clearSnackbar: () => set({ snackbarMessage: null }),
+    setNetworkOnline: (online) => {
+      if (get().isOnline !== online) set({ isOnline: online });
+    },
 
     bootstrap: async () => {
       const { tokenStorage } = await import("@/data/storage/tokenStorage");
@@ -321,13 +359,18 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ isLoggedIn: true });
         return true;
       } catch (error) {
-        if (error instanceof ApiException && error.status === 401) clearSession();
-        return false;
+        if (error instanceof ApiException && error.status === 401) {
+          clearSession();
+          return false;
+        }
+        console.warn("bootstrap failed, keeping session for retry", error);
+        set({ isLoggedIn: true, snackbarMessage: userMessage(error) });
+        return true;
       }
     },
 
     login: async (email, password) => {
-      set({ loading: true });
+      setOp("auth", true);
       try {
         await api.login(email, password);
         set({ isLoggedIn: true });
@@ -341,12 +384,12 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("auth", false);
       }
     },
 
     register: async (email, password, firstName) => {
-      set({ loading: true });
+      setOp("auth", true);
       try {
         await api.register(email, password, firstName);
         set({ isLoggedIn: true });
@@ -360,18 +403,19 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("auth", false);
       }
     },
 
     afterExternalLogin: async () => {
-      set({ loading: true, isLoggedIn: true });
+      setOp("auth", true);
+      set({ isLoggedIn: true });
       try {
         await loadRemoteState(set, get);
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("auth", false);
       }
     },
 
@@ -387,14 +431,14 @@ export const useAppStore = create<AppState>((set, get) => {
     refreshState: async (force = false) => {
       if (!force && Date.now() - lastRefreshStateAt < FOCUS_REFETCH_TTL_MS) return;
       lastRefreshStateAt = Date.now();
-      set({ loading: true });
+      setOp("refresh", true);
       try {
         await loadRemoteState(set, get);
       } catch (error) {
         if (error instanceof ApiException && error.status === 401) clearSession();
         else set({ snackbarMessage: userMessage(error) });
       } finally {
-        set({ loading: false });
+        setOp("refresh", false);
       }
     },
 
@@ -425,14 +469,16 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     scanBle: async () => {
-      set({ loading: true });
+      provisionCancelRequested = false;
+      ble.resetAbort();
+      setOp("scan", true);
       try {
         const devices = await ble.scan();
         set({ bleDevices: devices });
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("scan", false);
       }
     },
 
@@ -446,38 +492,44 @@ export const useAppStore = create<AppState>((set, get) => {
       }),
 
     provisionBle: async (address, deviceName, ssid, password) => {
+      provisionCancelRequested = false;
+      ble.resetAbort();
+      setOp("provision", true);
       set({
-        loading: true,
         bleProvisionError: null,
         bleWifiProvisioned: false,
         bleProvisionDeviceName: deviceName,
         bleProvisionPhase: BleProvisionPhase.Connecting,
       });
 
+      const failProvision = async (message: string): Promise<boolean> => {
+        if (isProvisionCancelled(null)) {
+          setOp("provision", false);
+          return false;
+        }
+        set({ bleProvisionPhase: BleProvisionPhase.Failed, bleProvisionError: message });
+        setOp("provision", false);
+        await ble.disconnect().catch(() => undefined);
+        return false;
+      };
+
       let identity: BleBoxIdentity | null = null;
       try {
         await ble.connect(address, deviceName);
         identity = ble.boxIdentity();
       } catch (error) {
-        set({
-          bleProvisionPhase: BleProvisionPhase.Failed,
-          bleProvisionError: bleConnectError(error),
-          loading: false,
-        });
-        await ble.disconnect().catch(() => undefined);
-        return false;
+        if (isProvisionCancelled(error)) {
+          setOp("provision", false);
+          return false;
+        }
+        return failProvision(bleConnectError(error));
       }
 
       const resolvedName = (identity?.deviceName ?? "").trim() || deviceName.trim();
       if (!resolvedName || resolvedName.toLowerCase() === "boiteacoeur") {
-        set({
-          bleProvisionPhase: BleProvisionPhase.Failed,
-          bleProvisionError:
-            "Impossible de lire l'identité de la boîte. Reflashe le firmware et réessaie.",
-          loading: false,
-        });
-        await ble.disconnect().catch(() => undefined);
-        return false;
+        return failProvision(
+          "Impossible de lire l'identité de la boîte. Reflashe le firmware et réessaie.",
+        );
       }
       set({
         bleProvisionDeviceName: resolvedName,
@@ -489,13 +541,11 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         await ble.sendWifiCredentials(ssid, password);
       } catch (error) {
-        set({
-          bleProvisionPhase: BleProvisionPhase.Failed,
-          bleProvisionError: userMessage(error),
-          loading: false,
-        });
-        await ble.disconnect().catch(() => undefined);
-        return false;
+        if (isProvisionCancelled(error)) {
+          setOp("provision", false);
+          return false;
+        }
+        return failProvision(userMessage(error));
       }
 
       set({ bleProvisionPhase: BleProvisionPhase.WaitingForBox });
@@ -503,22 +553,16 @@ export const useAppStore = create<AppState>((set, get) => {
       try {
         wifiOk = await ble.awaitWifiResult();
       } catch (error) {
-        set({
-          bleProvisionPhase: BleProvisionPhase.Failed,
-          bleProvisionError: userMessage(error),
-          loading: false,
-        });
-        return false;
+        if (isProvisionCancelled(error)) {
+          setOp("provision", false);
+          return false;
+        }
+        return failProvision(userMessage(error));
       }
       if (!wifiOk) {
-        set({
-          bleProvisionPhase: BleProvisionPhase.Failed,
-          bleProvisionError:
-            "La boîte n'a pas pu se connecter au WiFi. Vérifie que le réseau est en 2,4 GHz et que le mot de passe est correct.",
-          loading: false,
-        });
-        await ble.disconnect().catch(() => undefined);
-        return false;
+        return failProvision(
+          "La boîte n'a pas pu se connecter au WiFi. Vérifie que le réseau est en 2,4 GHz et que le mot de passe est correct.",
+        );
       }
 
       set({ bleWifiProvisioned: true, bleProvisionPhase: BleProvisionPhase.LinkingAccount });
@@ -528,18 +572,30 @@ export const useAppStore = create<AppState>((set, get) => {
           get().bleProvisionSerialNumber ?? "",
         );
         await loadRemoteState(set, get);
-        set({ bleProvisionPhase: BleProvisionPhase.Success, loading: false });
+        set({ bleProvisionPhase: BleProvisionPhase.Success });
+        setOp("provision", false);
         await ble.disconnect().catch(() => undefined);
         return true;
       } catch (error) {
-        set({
-          bleProvisionPhase: BleProvisionPhase.Failed,
-          bleProvisionError: userMessage(error),
-          loading: false,
-        });
-        await ble.disconnect().catch(() => undefined);
-        return false;
+        if (isProvisionCancelled(error)) {
+          setOp("provision", false);
+          return false;
+        }
+        return failProvision(userMessage(error));
       }
+    },
+
+    cancelBleProvision: async () => {
+      provisionCancelRequested = true;
+      console.log("ble provisioning cancelled by user");
+      await ble.cancel().catch(() => undefined);
+      setOp("provision", false);
+      setOp("claim", false);
+      set({
+        bleProvisionPhase: BleProvisionPhase.Idle,
+        bleProvisionError: null,
+        bleWifiProvisioned: false,
+      });
     },
 
     retryClaimAfterProvision: async () => {
@@ -549,24 +605,29 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ bleProvisionError: "Identité de boîte incomplète." });
         return false;
       }
-      set({ loading: true, bleProvisionError: null, bleProvisionPhase: BleProvisionPhase.LinkingAccount });
+      provisionCancelRequested = false;
+      setOp("claim", true);
+      set({ bleProvisionError: null, bleProvisionPhase: BleProvisionPhase.LinkingAccount });
       try {
         await claimDeviceWhenOnline(uuid, serial);
         await loadRemoteState(set, get);
-        set({ bleProvisionPhase: BleProvisionPhase.Success, loading: false });
+        set({ bleProvisionPhase: BleProvisionPhase.Success });
+        setOp("claim", false);
         return true;
       } catch (error) {
+        setOp("claim", false);
+        if (isProvisionCancelled(error)) return false;
         set({
           bleProvisionPhase: BleProvisionPhase.Failed,
           bleProvisionError: userMessage(error),
-          loading: false,
         });
         return false;
       }
     },
 
     generatePairingCode: async () => {
-      set({ loading: true, pairingCodeCopied: false });
+      setOp("pairing", true);
+      set({ pairingCodeCopied: false });
       try {
         const deviceId = get().devices.length > 1 ? get().selectedDeviceId || null : null;
         const response = await api.generatePairingCode(deviceId);
@@ -574,14 +635,14 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("pairing", false);
       }
     },
 
     markPairingCodeCopied: () => set({ pairingCodeCopied: true, snackbarMessage: "Code copié." }),
 
     acceptPairingCode: async (code) => {
-      set({ loading: true });
+      setOp("pairing", true);
       try {
         const deviceId = get().devices.length > 1 ? get().selectedDeviceId || null : null;
         await api.acceptPairingCode(code, deviceId);
@@ -590,12 +651,12 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("pairing", false);
       }
     },
 
     unlinkTarget: async (pairingId) => {
-      set({ loading: true });
+      setOp("pairing", true);
       try {
         await api.unlinkPairing(pairingId);
         await loadRemoteState(set, get);
@@ -603,12 +664,12 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("pairing", false);
       }
     },
 
     setTargetAlias: async (pairingId, alias) => {
-      set({ loading: true });
+      setOp("pairing", true);
       try {
         await api.setPairingAlias(pairingId, alias);
         await loadRemoteState(set, get);
@@ -618,12 +679,12 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("pairing", false);
       }
     },
 
     unclaimDevice: async (deviceId) => {
-      set({ loading: true });
+      setOp("deviceAction", true);
       try {
         await api.unclaimDevice(deviceId);
         await loadRemoteState(set, get);
@@ -633,12 +694,12 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("deviceAction", false);
       }
     },
 
     resetAndDeleteDevice: async (deviceId) => {
-      set({ loading: true });
+      setOp("deviceAction", true);
       try {
         await api.deleteDevice(deviceId);
         await loadRemoteState(set, get);
@@ -648,7 +709,7 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("deviceAction", false);
       }
     },
 
@@ -664,7 +725,7 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: "Aucune boîte liée pour recevoir ton message." });
         return false;
       }
-      set({ loading: true });
+      setOp("send", true);
       try {
         const bacm = await buildFromScene(get().composerScene);
         const scheduled = get().scheduledSendAt?.trim() || null;
@@ -698,41 +759,41 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("send", false);
       }
     },
 
     loadHistory: async (force = false) => {
       if (!force && Date.now() - lastHistoryAt < FOCUS_REFETCH_TTL_MS) return;
       lastHistoryAt = Date.now();
-      set({ loading: true });
+      setOp("history", true);
       try {
         const response = await api.listSentMessages();
         set({ history: response.items });
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("history", false);
       }
     },
 
     loadReceived: async (force = false) => {
       if (!force && Date.now() - lastReceivedAt < FOCUS_REFETCH_TTL_MS) return;
       lastReceivedAt = Date.now();
-      set({ loading: true });
+      setOp("received", true);
       try {
         const response = await api.listReceivedMessages();
         set({ received: response.items });
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("received", false);
       }
     },
 
     updateDeviceSettings: async (deviceId, displayName, regionOverride) => {
       if (!deviceId) return;
-      set({ loading: true });
+      setOp("saveSettings", true);
       try {
         const response = await api.updateDevice(deviceId, {
           displayName: displayName.trim(),
@@ -758,13 +819,13 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("saveSettings", false);
       }
     },
 
     updateBoxSettings: async (deviceId, settings) => {
       if (!deviceId) return;
-      set({ loading: true });
+      setOp("saveSettings", true);
       try {
         const response = await api.updateDevice(deviceId, {
           backlightLevel: settings.backlightLevel,
@@ -789,13 +850,13 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("saveSettings", false);
       }
     },
 
     saveDeviceSettings: async (deviceId, patch) => {
       if (!deviceId) return;
-      set({ loading: true });
+      setOp("saveSettings", true);
       try {
         const response = await api.updateDevice(deviceId, {
           displayName: patch.displayName.trim(),
@@ -826,7 +887,7 @@ export const useAppStore = create<AppState>((set, get) => {
       } catch (e) {
         set({ snackbarMessage: userMessage(e) });
       } finally {
-        set({ loading: false });
+        setOp("saveSettings", false);
       }
     },
 
@@ -835,7 +896,7 @@ export const useAppStore = create<AppState>((set, get) => {
       const device = get().devices.find((d) => d.id === deviceId);
       if (!device) return;
       try {
-        await pushBoxSettingsViaBle(get, device.device_name, device.uuid ?? null, {
+        const pushed = await pushBoxSettingsViaBle(get, device.device_name, device.uuid ?? null, {
           displayName: settings.displayName.trim(),
           region: settings.regionOverride.trim(),
           locale: settings.locale.trim() || "fr",
@@ -843,7 +904,21 @@ export const useAppStore = create<AppState>((set, get) => {
           sleepTimeoutSec: settings.sleepTimeoutSec,
           displaySleepEnabled: settings.displaySleepEnabled,
         });
-      } catch {
+        if (!pushed) {
+          console.warn("live box settings push skipped: box not reachable over BLE");
+          set({
+            bleLiveSettingsError:
+              "Réglage non appliqué en direct : la boîte n'est pas à portée Bluetooth.",
+          });
+        } else if (get().bleLiveSettingsError) {
+          set({ bleLiveSettingsError: null });
+        }
+      } catch (error) {
+        console.warn("live box settings push failed", error);
+        set({
+          bleLiveSettingsError:
+            "Réglage non appliqué en direct : la boîte n'est pas à portée Bluetooth.",
+        });
       }
     },
 
@@ -859,7 +934,7 @@ export const useAppStore = create<AppState>((set, get) => {
     },
 
     updateUserProfile: async (patch) => {
-      set({ loading: true });
+      setOp("profile", true);
       try {
         const profile = await api.updateUserProfile(patch);
         set({ userProfile: profile, snackbarMessage: "Profil mis à jour." });
@@ -868,7 +943,7 @@ export const useAppStore = create<AppState>((set, get) => {
         set({ snackbarMessage: userMessage(e) });
         return false;
       } finally {
-        set({ loading: false });
+        setOp("profile", false);
       }
     },
 
@@ -877,6 +952,10 @@ export const useAppStore = create<AppState>((set, get) => {
     setComposerEphemeral: (value) => set({ composerEphemeral: value }),
   };
 });
+
+export function useLoading(op: LoadingOp): boolean {
+  return useAppStore((s) => s.loadingOps[op] ?? false);
+}
 
 async function connectBleForConfig(
   get: () => AppState,
