@@ -30,6 +30,8 @@
 #include "BacOtaPayload.h"
 #include "BacBacklight.h"
 #include "BacPowerManager.h"
+#include "BacWatchdog.h"
+#include <Update.h>
 
 class BacApp {
 public:
@@ -51,6 +53,8 @@ public:
     static const uint32_t DISCONNECT_MIN_MS = 3000;
     static const uint32_t WIFI_TEST_MIN_MS = 5000;
     static const uint32_t FACTORY_RESET_MIN_MS = 10000;
+    static const uint32_t FW_HEALTH_STABLE_MS = 8000;
+    static const uint32_t DESTRUCTIVE_MIN_INTERVAL_MS = 30000;
     static const size_t PROV_SSID_MAX = 32;
     static const size_t PROV_PASS_MAX = 63;
 
@@ -96,14 +100,25 @@ public:
         _cloudClient.begin(&_config, &BacApp::cloudMessageThunk, this);
         _cloudClient.setConfigCommandHandler(&BacApp::cloudConfigThunk, this);
         _cloudClient.setOtaOfferHandler(&BacApp::cloudOtaOfferThunk, this);
+        Update.abort();
         loadBootRecovery();
+        loadDestructiveGuard();
+        _fwPendingVerify = firmwareAwaitingConfirm();
+        _healthStartMs = millis();
+        _healthFrameRendered = false;
         _backlight.applyLevel(_config.backlightLevel);
         _power.resetActivity();
     }
 
-    bool shouldUpdateUi() const { return _power.shouldRenderUi(); }
+    void notifyUiRendered() { _healthFrameRendered = true; }
+
+    bool shouldUpdateUi() const {
+        if (_usbFlashActive) return false;
+        return _power.shouldRenderUi();
+    }
 
     uint8_t targetFps() const {
+        if (_usbFlashActive) return 1;
         return _power.targetFps(_msgSessionActive || messageViewActive());
     }
 
@@ -119,9 +134,8 @@ public:
 
     bool hasPendingMessage() const { return _msgStore.hasMessage(); }
 
-    void onCacheReady() {
+    void beginBootFlow() {
         if (!_ui) return;
-        confirmFirmwareValid();
         String prevUuid = _config.uuid;
         _config.ensureValidUuid();
         if (!_config.hasValidUuid()) return;
@@ -167,6 +181,7 @@ public:
         pollPendingMessage();
         pollMessageSession();
         pollOtaPending();
+        pollFirmwareHealth();
         if (_httpStarted) _msgServer.tick();
         _cloudClient.tickIdle();
         _power.tick(_config.sleepTimeoutSec, _config.displaySleepEnabled, _mode == Mode::Idle);
@@ -203,8 +218,53 @@ public:
         return _ui->current()->name();
     }
     bool isWifiLinked() const { return _wifi.connected(); }
-    bool isOtaBusy() const { return _otaRunning || _otaPending; }
-    bool isIdleForService() const { return _mode == Mode::Idle; }
+    bool isOtaBusy() const { return _otaRunning || _otaPending || _usbFlashActive; }
+    bool isIdleForService() const { return _mode == Mode::Idle && !_usbFlashActive; }
+    bool isUsbFlashActive() const { return _usbFlashActive; }
+    bool isUsbServiceActive() const { return _usbServiceActive; }
+
+    void enterUsbService(bool flashing) {
+        if (!_ui) return;
+        _usbServiceActive = true;
+        _usbFlashActive = flashing;
+        _usbFlashLastUiMs = 0;
+        _touchEnabled = false;
+        if (flashing) {
+            goInstant(&projet::screen_scr_mr3hcyofj);
+            projet::w90.setText(BacLocale::usb_flash);
+            projet::w91.setText(BacLocale::usb_warn);
+            _ui->setFloat("ota_pct", 0.0f);
+        } else {
+            goInstant(&projet::screen_scr_mrbusmon1);
+        }
+        _ui->invalidate();
+    }
+
+    void setUsbFlashProgress(uint32_t received, uint32_t total) {
+        if (!_ui || total == 0) return;
+        float pct = (100.0f * (float)received) / (float)total;
+        if (pct > 100.0f) pct = 100.0f;
+        _usbFlashPct = pct;
+    }
+
+    bool consumeUsbFlashUiPulse() {
+        if (!_usbFlashActive || !_ui) return false;
+        uint32_t now = millis();
+        if (now - _usbFlashLastUiMs < 400) return false;
+        _usbFlashLastUiMs = now;
+        _ui->setFloat("ota_pct", _usbFlashPct);
+        _ui->invalidate();
+        return true;
+    }
+
+    void leaveUsbService() {
+        _usbFlashActive = false;
+        _usbServiceActive = false;
+        _usbFlashPct = 0.0f;
+        _touchEnabled = (_mode == Mode::Idle || _mode == Mode::Lost || _mode == Mode::Settings);
+        if (_mode == Mode::Idle) goInstant(&projet::screen_scr_mqzyaiw41j);
+        else if (_mode == Mode::Lost) goInstant(&projet::screen_scr_mqwqhtj72);
+    }
     bool isWifiAttemptActive() const { return _wifiAttemptActive; }
     uint32_t wifiConnectElapsedMs() const { return _wifi.connectElapsedMs(); }
     bool isBleReady() const { return _ble.isReady(); }
@@ -648,6 +708,44 @@ private:
         _bootRecoverDone = (_bootRecoverMsgId == 0);
     }
 
+    void loadDestructiveGuard() {
+        Preferences prefs;
+        if (!prefs.begin("baccmd", true)) {
+            _lastDestructiveCmdId = 0;
+            return;
+        }
+        _lastDestructiveCmdId = prefs.getUInt("last_id", 0);
+        prefs.end();
+    }
+
+    void persistDestructiveCmd(uint32_t cmdId) {
+        Preferences prefs;
+        if (!prefs.begin("baccmd", false)) return;
+        prefs.putUInt("last_id", cmdId);
+        prefs.end();
+    }
+
+    bool acceptDestructiveCommand(uint32_t cmdId, const char *name) {
+        if (cmdId == 0) {
+            BacDebug::eventf("sys", "%s rejected: missing command_id", name);
+            return false;
+        }
+        if (cmdId <= _lastDestructiveCmdId) {
+            BacDebug::eventf("sys", "%s replay ignored id=%u", name, cmdId);
+            _cloudClient.ackCommand(cmdId);
+            return false;
+        }
+        uint32_t now = millis();
+        if (_lastDestructiveMs != 0 && (now - _lastDestructiveMs) < DESTRUCTIVE_MIN_INTERVAL_MS) {
+            BacDebug::eventf("sys", "%s rate limited id=%u", name, cmdId);
+            return false;
+        }
+        _lastDestructiveMs = now;
+        _lastDestructiveCmdId = cmdId;
+        persistDestructiveCmd(cmdId);
+        return true;
+    }
+
     void pollBootRecovery() {
         if (_bootRecoverDone) return;
         if (!_wifi.connected() || !_config.apiSecret.length()) return;
@@ -662,17 +760,33 @@ private:
         _bootRecoverDone = true;
     }
 
-    void confirmFirmwareValid() {
-        if (_fwMarkedValid) return;
-        _fwMarkedValid = true;
+    static bool firmwareAwaitingConfirm() {
         const esp_partition_t *running = esp_ota_get_running_partition();
-        if (!running) return;
+        if (!running) return false;
         esp_ota_img_states_t state;
-        if (esp_ota_get_state_partition(running, &state) != ESP_OK) return;
-        if (state != ESP_OTA_IMG_PENDING_VERIFY) return;
-        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
-            BacDebug::event("ota", "firmware marked valid");
+        if (esp_ota_get_state_partition(running, &state) != ESP_OK) return false;
+        return state == ESP_OTA_IMG_PENDING_VERIFY;
+    }
+
+    void pollFirmwareHealth() {
+        if (_fwMarkedValid) return;
+        if (!_fwPendingVerify) {
+            _fwMarkedValid = true;
+            return;
         }
+        if (millis() - _healthStartMs < FW_HEALTH_STABLE_MS) return;
+        if (!_healthFrameRendered) return;
+        if (!lucarne::volumeMounted()) return;
+        if (!bootModeSettled()) return;
+        _fwMarkedValid = true;
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            BacDebug::event("ota", "firmware marked valid after smoke test");
+        }
+    }
+
+    bool bootModeSettled() const {
+        if (_wifi.connected()) return true;
+        return _mode == Mode::Idle || _mode == Mode::Lost || _mode == Mode::FirstSetup;
     }
 
     void onCloudCommand(const char *json) {
@@ -680,11 +794,12 @@ private:
         String body = json;
         String type = BacCloudClient::extractJsonString(body, "command_type");
         if (type == "ota") {
+            uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
             if (!canRunOta()) {
                 BacDebug::event("ota", "blocked during setup");
+                if (cmdId) _cloudClient.failCommand(cmdId);
                 return;
             }
-            uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
             String payload = BacCloudClient::extractJsonObject(body, "payload");
             if (!payload.length()) payload = body;
             queueOtaFromPayload(payload, cmdId);
@@ -692,7 +807,8 @@ private:
         }
         if (type == "reboot") {
             uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
-            if (cmdId) _cloudClient.ackCommand(cmdId);
+            if (!acceptDestructiveCommand(cmdId, "reboot")) return;
+            _cloudClient.ackCommand(cmdId);
             BacDebug::event("sys", "remote reboot");
             delay(200);
             ESP.restart();
@@ -700,7 +816,8 @@ private:
         }
         if (type == "factory_reset") {
             uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
-            if (cmdId) _cloudClient.ackCommand(cmdId);
+            if (!acceptDestructiveCommand(cmdId, "factory_reset")) return;
+            _cloudClient.ackCommand(cmdId);
             BacDebug::event("sys", "remote factory reset");
             startFactoryResetFlow();
             return;
@@ -767,7 +884,7 @@ private:
     }
 
     bool canRunOta() const {
-        return _config.setupComplete() && _mode == Mode::Idle;
+        return _config.setupComplete() && _mode == Mode::Idle && !_usbFlashActive;
     }
 
     void queueOtaFromPayload(const String &payload, uint32_t commandId) {
@@ -786,6 +903,7 @@ private:
         BacOtaPayload parsed;
         if (!BacOtaPayload::parseFromJson(root, parsed)) {
             BacDebug::event("ota", "invalid payload");
+            if (commandId) _cloudClient.failCommand(commandId);
             return;
         }
         _otaPayload = parsed;
@@ -818,6 +936,9 @@ private:
         }
         if (_otaFailed) {
             _otaFailed = false;
+            _usbFlashActive = false;
+            _usbServiceActive = false;
+            goInstant(&projet::screen_scr_mr3hcyofj);
             projet::w90.setText(BacLocale::ota_failed);
             projet::w91.setText("");
             if (_ui) _ui->invalidate();
@@ -854,9 +975,14 @@ private:
     }
 
     void otaTaskBody() {
+        BacWatchdog::subscribe();
         bool needFw = _otaPayload.hasFirmware();
         if (needFw && _otaPayload.version[0] && strcmp(BAC_FW_VERSION, _otaPayload.version) == 0) {
             BacDebug::event("ota", "firmware skip, already current");
+            needFw = false;
+        }
+        if (needFw && BacOtaPayload::compareSemver(_otaPayload.version, BAC_FW_VERSION) < 0) {
+            BacDebug::eventf("ota", "firmware downgrade refused v=%s current=%s", _otaPayload.version, BAC_FW_VERSION);
             needFw = false;
         }
         bool shaFail = false;
@@ -915,9 +1041,11 @@ private:
             }
             _otaAssetsDone = true;
         } else {
+            Update.abort();
             lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
             _otaFailed = true;
         }
+        BacWatchdog::unsubscribe();
         vTaskDelete(nullptr);
     }
 
@@ -1576,6 +1704,15 @@ private:
     BacOtaPayload _otaPayload = {};
     TaskHandle_t _otaTask = nullptr;
     bool _fwMarkedValid = false;
+    bool _fwPendingVerify = false;
+    bool _healthFrameRendered = false;
+    uint32_t _healthStartMs = 0;
+    uint32_t _lastDestructiveCmdId = 0;
+    uint32_t _lastDestructiveMs = 0;
+    bool _usbServiceActive = false;
+    bool _usbFlashActive = false;
+    float _usbFlashPct = 0.0f;
+    uint32_t _usbFlashLastUiMs = 0;
 };
 
 #else
@@ -1585,7 +1722,8 @@ private:
 class BacApp {
 public:
     void begin(lucarne::UI &, BacScreenCache &) {}
-    void onCacheReady() {}
+    void beginBootFlow() {}
+    void notifyUiRendered() {}
     void tick(uint32_t) {}
     bool touchEnabled() const { return false; }
     int firstSetupStep() const { return 0; }
