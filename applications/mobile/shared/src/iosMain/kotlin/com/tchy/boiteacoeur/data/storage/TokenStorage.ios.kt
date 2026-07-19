@@ -1,25 +1,32 @@
 package com.tchy.boiteacoeur.data.storage
 
+import com.russhwolf.settings.ExperimentalSettingsImplementation
+import com.russhwolf.settings.KeychainSettings
 import com.russhwolf.settings.Settings
-import com.russhwolf.settings.NSUserDefaultsSettings
-import platform.Foundation.NSUserDefaults
 
+@OptIn(ExperimentalSettingsImplementation::class)
 actual class TokenStorage actual constructor() {
-    private val settings: Settings = NSUserDefaultsSettings(NSUserDefaults.standardUserDefaults)
+    private val settings: Settings = KeychainSettings(service = KEYCHAIN_SERVICE)
 
-    actual fun getAccessToken(): String? = settings.readToken("access")
+    actual fun getAccessToken(): String? = settings.readToken(KEY_ACCESS)
     actual fun setAccessToken(token: String?) {
-        if (token == null) settings.remove("access") else settings.putString("access", token)
+        if (token == null) settings.remove(KEY_ACCESS) else settings.putString(KEY_ACCESS, token)
     }
 
-    actual fun getRefreshToken(): String? = settings.readToken("refresh")
+    actual fun getRefreshToken(): String? = settings.readToken(KEY_REFRESH)
     actual fun setRefreshToken(token: String?) {
-        if (token == null) settings.remove("refresh") else settings.putString("refresh", token)
+        if (token == null) settings.remove(KEY_REFRESH) else settings.putString(KEY_REFRESH, token)
     }
 
     actual fun clear() {
-        settings.remove("access")
-        settings.remove("refresh")
+        settings.remove(KEY_ACCESS)
+        settings.remove(KEY_REFRESH)
+    }
+
+    private companion object {
+        const val KEYCHAIN_SERVICE = "com.tchy.boiteacoeur.tokens"
+        const val KEY_ACCESS = "access"
+        const val KEY_REFRESH = "refresh"
     }
 }
 
