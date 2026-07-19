@@ -17,17 +17,55 @@ import type {
 
 type JsonBody = Record<string, unknown>;
 
+function isAbortError(error: unknown): boolean {
+  if (error instanceof Error && error.name === "AbortError") return true;
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "name" in error &&
+    (error as { name?: unknown }).name === "AbortError"
+  );
+}
+
+export async function fetchWithTimeout(
+  input: string,
+  init: RequestInit = {},
+  timeoutMs = AppConfig.API_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: init.signal ?? controller.signal });
+  } catch (error) {
+    if (isAbortError(error)) {
+      throw new ApiException("request timeout", 0);
+    }
+    if (error instanceof ApiException) throw error;
+    throw new ApiException("network request failed", 0);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function readError(res: Response): Promise<never> {
   const text = await res.text().catch(() => "");
   throw new ApiException(parseApiErrorMessage(text), res.status);
 }
 
-async function requestJson<T>(path: string, init: RequestInit): Promise<T> {
-  const res = await fetch(`${AppConfig.API_BASE}${path}`, init);
+async function requestJson<T>(
+  path: string,
+  init: RequestInit,
+  timeoutMs = AppConfig.API_TIMEOUT_MS,
+): Promise<T> {
+  const res = await fetchWithTimeout(`${AppConfig.API_BASE}${path}`, init, timeoutMs);
   if (res.status < 200 || res.status > 299) {
     return readError(res);
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new ApiException("invalid server response", res.status);
+  }
 }
 
 function jsonInit(method: string, body?: JsonBody, token?: string): RequestInit {
@@ -94,11 +132,33 @@ export async function refresh(): Promise<AuthResponse> {
 export async function logout(): Promise<void> {
   const refreshToken = tokenStorage.getRefreshToken();
   if (refreshToken) {
-    await fetch(`${AppConfig.API_BASE}/api/v1/auth/logout`, {
+    await fetchWithTimeout(`${AppConfig.API_BASE}/api/v1/auth/logout`, {
       ...jsonInit("POST", { refresh_token: refreshToken }),
     }).catch(() => undefined);
   }
   await tokenStorage.clear();
+}
+
+const oauthExchangeInflight = new Map<string, Promise<void>>();
+
+export async function exchangeOAuthCode(code: string): Promise<void> {
+  const normalized = code.trim();
+  if (!normalized) throw new ApiException("missing code", 400);
+  const pending = oauthExchangeInflight.get(normalized);
+  if (pending) return pending;
+  const work = (async () => {
+    try {
+      const body = await requestJson<AuthResponse>(
+        "/api/v1/auth/oauth/exchange",
+        jsonInit("POST", { code: normalized }),
+      );
+      await persistTokens(body);
+    } finally {
+      oauthExchangeInflight.delete(normalized);
+    }
+  })();
+  oauthExchangeInflight.set(normalized, work);
+  return work;
 }
 
 export async function storeExternalTokens(
