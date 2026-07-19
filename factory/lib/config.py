@@ -7,13 +7,14 @@ DATA_DIR = SKETCH / "data"
 ASSETS_DIR = DATA_DIR / "assets"
 DEVICES_DIR = SKETCH / "factory" / "devices"
 ARCHIVES_DIR = FACTORY_ROOT / "archives"
+RELEASES_DIR = FACTORY_ROOT / "releases"
 REGISTRY = FACTORY_ROOT / "registry.json"
 VERSION_FILE = FACTORY_ROOT / "VERSION"
 FW_HEADER = SKETCH / "BacFirmware.h"
 BUILD_DIR = SKETCH / "build" / "esp32.esp32.esp32s3"
 
 FQBN = (
-    "esp32:esp32:esp32s3:UploadSpeed=921600,USBMode=hwcdc,CDCOnBoot=cdc,"
+    "esp32:esp32:esp32s3:UploadSpeed=921600,USBMode=default,CDCOnBoot=cdc,"
     "UploadMode=cdc,CPUFreq=240,FlashMode=qio,FlashSize=16M,"
     "PartitionScheme=app3M_fat9M_16MB,PSRAM=opi,LoopCore=1,EventsCore=1"
 )
@@ -32,6 +33,7 @@ FLASH_MAP = {
 }
 
 ARDUINO15 = Path.home() / "AppData" / "Local" / "Arduino15"
+USBCDC_CPP = ARDUINO15 / "packages" / "esp32" / "hardware" / "esp32" / "3.3.10" / "cores" / "esp32" / "USBCDC.cpp"
 ESPTOOL = ARDUINO15 / "packages" / "esp32" / "tools" / "esptool_py" / "5.3.0" / "esptool.exe"
 BOOT_APP0 = ARDUINO15 / "packages" / "esp32" / "hardware" / "esp32" / "3.3.10" / "tools" / "partitions" / "boot_app0.bin"
 MKFATFS = FACTORY_ROOT / "tools" / "bin" / "mkfatfs.exe"
