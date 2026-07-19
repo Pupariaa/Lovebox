@@ -97,8 +97,19 @@ public:
         _provisionWanted = true;
         _shutdownPending = false;
         _shutdownAfterDisconnect = false;
+        _slowAdvert = false;
         if (!_ready && !begin(_deviceName.c_str(), _serialNumber.c_str())) return;
         setProvisionStatus(PROV_IDLE);
+        startAdvertising();
+    }
+
+    void openIdleAdvertising() {
+        _provisionWanted = true;
+        _shutdownPending = false;
+        _shutdownAfterDisconnect = false;
+        _slowAdvert = true;
+        if (!_ready && !begin(_deviceName.c_str(), _serialNumber.c_str())) return;
+        applyAdvertParams();
         startAdvertising();
     }
 
@@ -176,6 +187,7 @@ public:
 
     void startAdvertising() {
         if (!_ready || _advertising || !_provisionWanted) return;
+        applyAdvertParams();
         BLEDevice::startAdvertising();
         _advertising = true;
     }
@@ -187,6 +199,17 @@ public:
     }
 
 private:
+    void applyAdvertParams() {
+        if (!_adv) return;
+        if (_slowAdvert) {
+            _adv->setMinInterval(0x0400);
+            _adv->setMaxInterval(0x0800);
+        } else {
+            _adv->setMinInterval(0x0020);
+            _adv->setMaxInterval(0x0040);
+        }
+    }
+
     void syncIdentityCharacteristic() {
         if (!_infoChr) return;
         String payload = _deviceName;
@@ -218,6 +241,7 @@ private:
             owner->_shutdownAfterDisconnect = false;
             owner->_shutdownPending = false;
             owner->_provisionWanted = true;
+            owner->holdForAppSession(true);
             owner->stopAdvertising();
         }
         void onDisconnect(BLEServer *) override {
@@ -309,6 +333,7 @@ private:
     bool _clientConnected = false;
     bool _shutdownAfterDisconnect = false;
     bool _shutdownPending = false;
+    bool _slowAdvert = false;
     uint32_t _shutdownDueMs = 0;
 };
 
