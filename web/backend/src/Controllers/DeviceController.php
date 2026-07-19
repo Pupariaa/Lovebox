@@ -8,6 +8,7 @@ use Bac\Repositories\DeviceCommandRepository;
 use Bac\Repositories\DeviceRepository;
 use Bac\Services\DeviceService;
 use Bac\Services\MessageService;
+use Bac\Services\OtaService;
 use Bac\Support\JsonResponse;
 use Psr\Http\Message\ResponseInterface as Response;
 use Psr\Http\Message\ServerRequestInterface as Request;
@@ -18,7 +19,8 @@ final class DeviceController
         private DeviceService $devices,
         private DeviceRepository $deviceRepo,
         private DeviceCommandRepository $commands,
-        private MessageService $messages
+        private MessageService $messages,
+        private OtaService $ota
     ) {
     }
 
@@ -40,9 +42,22 @@ final class DeviceController
     {
         $device = (array) $request->getAttribute('device');
         $body = (array) $request->getParsedBody();
+        $telemetry = [
+            'firmware_version' => isset($body['firmware_version']) ? (string) $body['firmware_version'] : null,
+            'rssi' => isset($body['rssi']) ? (int) $body['rssi'] : null,
+            'free_heap' => isset($body['free_heap']) ? (int) $body['free_heap'] : null,
+            'uptime_s' => isset($body['uptime_s']) ? (int) $body['uptime_s'] : null,
+            'ip_addr' => isset($body['ip']) ? substr((string) $body['ip'], 0, 45) : null,
+            'mac_addr' => isset($body['mac']) ? substr((string) $body['mac'], 0, 17) : null,
+        ];
+        $this->deviceRepo->updateTelemetry((int) $device['id'], $telemetry);
+        $result = ['ok' => true];
         $fw = isset($body['firmware_version']) ? (string) $body['firmware_version'] : null;
-        $this->deviceRepo->touchHeartbeat((int) $device['id'], $fw);
-        return JsonResponse::ok($response, ['ok' => true]);
+        $update = $this->ota->offerUpdate((int) $device['id'], $fw);
+        if ($update) {
+            $result['firmware_update'] = $update;
+        }
+        return JsonResponse::ok($response, $result);
     }
 
     public function poll(Request $request, Response $response): Response
@@ -51,6 +66,7 @@ final class DeviceController
         $params = $request->getQueryParams();
         $timeout = (int) ($params['timeout'] ?? 25);
         $this->deviceRepo->touchHeartbeat((int) $device['id']);
+        $this->messages->reconcileStaleThrottled(60);
         $ownerUserId = isset($device['owner_user_id']) ? (int) $device['owner_user_id'] : null;
         if ($ownerUserId) {
             $this->messages->consolidateDeliveryForDevice((int) $device['id'], $ownerUserId);
@@ -198,5 +214,24 @@ final class DeviceController
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
         }
+    }
+
+    public function delete(Request $request, Response $response, array $args): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $deviceId = (int) ($args['id'] ?? 0);
+        try {
+            $this->devices->deleteOwned($userId, $deviceId);
+            return JsonResponse::ok($response, ['ok' => true]);
+        } catch (\InvalidArgumentException $e) {
+            return JsonResponse::error($response, $e->getMessage(), 400);
+        }
+    }
+
+    public function deregister(Request $request, Response $response): Response
+    {
+        $device = (array) $request->getAttribute('device');
+        $this->devices->deregister($device);
+        return JsonResponse::ok($response, ['ok' => true]);
     }
 }
