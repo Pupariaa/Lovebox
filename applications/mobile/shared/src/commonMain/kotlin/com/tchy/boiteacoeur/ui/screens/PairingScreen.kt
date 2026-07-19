@@ -48,7 +48,7 @@ fun PairingContent(vm: AppViewModel, modifier: Modifier = Modifier) {
 
         Button(
             onClick = { vm.generatePairingCode() },
-            enabled = !vm.loading,
+            enabled = !vm.pairingLoading,
             modifier = Modifier.fillMaxWidth(),
             colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
         ) {
@@ -88,7 +88,7 @@ fun PairingContent(vm: AppViewModel, modifier: Modifier = Modifier) {
                 vm.acceptPairingCode(acceptCode.trim())
                 acceptCode = ""
             },
-            enabled = acceptCode.isNotBlank() && !vm.loading,
+            enabled = acceptCode.isNotBlank() && !vm.pairingLoading,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text("Lier ce contact")
