@@ -9,6 +9,7 @@
 #include "BacDebug.h"
 #include "BacFirmware.h"
 #include "BacSysInfo.h"
+#include "BacUsbDebug.h"
 
 class BacSerialConsole {
 public:
@@ -32,7 +33,7 @@ public:
                 if (line.length() > 0) handleLine(app, line);
                 continue;
             }
-            if (_line.length() < 127) _line += c;
+            if (_line.length() < BacUsbDebug::maxLineLength(_line)) _line += c;
         }
     }
 
@@ -40,6 +41,7 @@ private:
     String _line;
 
     void handleLine(BacApp &app, const String &line) {
+        if (BacUsbDebug::handleLine(app, line)) return;
         String cmd = line;
         cmd.toLowerCase();
         if (cmd == "help" || cmd == "?") {
@@ -144,7 +146,7 @@ private:
         exportConfigLine("build_year", c.buildYear);
         exportConfigLine("build_semester", c.buildSemester);
         exportConfigLine("hw_revision", c.hwRevision.length() ? c.hwRevision : String("BaC-S3-v1"));
-        exportConfigLine("api_url", c.apiUrl.length() ? c.apiUrl : String("https://boite-a-coeur.techalchemy.fr"));
+        exportConfigLine("api_url", c.apiUrl.length() ? c.apiUrl : String("https://boite-a-coeur.fr"));
         exportConfigLine("api_secret", c.apiSecret);
         exportConfigLine("region", c.region);
         exportConfigLine("old_boot_status", c.oldBootStatus);
@@ -163,7 +165,7 @@ private:
         printSecretField("psw", c.psw);
         Serial.print(F("configured: "));
         Serial.println(c.configured ? F("yes") : F("no"));
-        printField("api_url", c.apiUrl.length() ? c.apiUrl : String("https://boite-a-coeur.techalchemy.fr"));
+        printField("api_url", c.apiUrl.length() ? c.apiUrl : String("https://boite-a-coeur.fr"));
         printSecretField("api_secret", c.apiSecret);
         printField("region", c.region);
         if (c.tzOffsetValid) {
