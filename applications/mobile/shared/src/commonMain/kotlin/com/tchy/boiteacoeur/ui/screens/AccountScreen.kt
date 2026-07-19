@@ -89,7 +89,7 @@ fun AccountScreen(
                     )
                     password = ""
                 },
-                enabled = !vm.loading,
+                enabled = !vm.profileUpdating,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
             ) {
