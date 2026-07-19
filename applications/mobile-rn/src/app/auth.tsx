@@ -32,7 +32,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { AppConfig, type OAuthProvider } from "@/config/AppConfig";
 
-import { useAppStore } from "@/store/appStore";
+import { useAppStore, useLoading } from "@/store/appStore";
+
+import { userFacingError } from "@/data/api/errors";
 
 import { colors, radius, spacing } from "@/theme/theme";
 
@@ -67,7 +69,7 @@ export default function AuthScreen() {
 
   const afterExternalLogin = useAppStore((s) => s.afterExternalLogin);
 
-  const loading = useAppStore((s) => s.loading);
+  const loading = useLoading("auth");
 
   const showSnackbar = useAppStore((s) => s.showSnackbar);
 
@@ -139,7 +141,19 @@ export default function AuthScreen() {
 
     const ok = mode === "login" ? await login(email, password) : await register(email, password, firstName);
 
-    if (ok) router.replace("/(tabs)/home");
+    if (!ok) return;
+
+    const profile = useAppStore.getState().userProfile;
+
+    if (profile?.profile_complete === false || !profile?.first_name?.trim()) {
+
+      router.replace("/onboarding/profile");
+
+      return;
+
+    }
+
+    router.replace("/(tabs)/home");
 
   };
 
@@ -177,25 +191,37 @@ export default function AuthScreen() {
 
     setOauthBusy(true);
 
-    const { startOAuth } = await import("@/data/api/oauth");
+    try {
 
-    const result = await startOAuth(provider, mode);
+      const { startOAuth } = await import("@/data/api/oauth");
 
-    setOauthBusy(false);
+      const result = await startOAuth(provider, mode);
 
-    if (result.ok) {
+      if (result.ok) {
 
-      await finishOAuth(provider);
+        await finishOAuth(provider);
 
-    } else if (result.accountNotFound) {
+      } else if (result.accountNotFound) {
 
-      showSnackbar("Aucun compte trouvé. Passe par l'inscription.");
+        showSnackbar("Aucun compte trouvé. Passe par l'inscription.");
 
-      setMode("register");
+        setMode("register");
 
-    } else if (!result.cancelled) {
+      } else if (!result.cancelled) {
 
-      showSnackbar(result.error ?? "Connexion impossible.");
+        showSnackbar(result.error ?? "Connexion impossible.");
+
+      }
+
+    } catch (error) {
+
+      console.error("oauth flow failed", error);
+
+      showSnackbar(userFacingError(error, "Connexion impossible."));
+
+    } finally {
+
+      setOauthBusy(false);
 
     }
 
