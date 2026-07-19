@@ -6,6 +6,8 @@ export function deviceLabel(device: DeviceDto | null | undefined): string {
 }
 
 export function targetLabel(target: LinkedTargetDto): string {
+  if (target.alias?.trim()) return target.alias.trim();
+  if (target.owner_first_name?.trim()) return `Boîte de ${target.owner_first_name.trim()}`;
   return target.display_name?.trim() ? target.display_name : target.device_name;
 }
 
@@ -51,4 +53,13 @@ export const COMMON_REGIONS: { code: string; label: string }[] = [
   { code: "RE", label: "La Réunion" },
   { code: "GP", label: "Guadeloupe" },
   { code: "MQ", label: "Martinique" },
+];
+
+export const DEVICE_LOCALES: { code: string; label: string }[] = [
+  { code: "fr", label: "Français" },
+  { code: "en", label: "English" },
+  { code: "de", label: "Deutsch" },
+  { code: "es", label: "Español" },
+  { code: "it", label: "Italiano" },
+  { code: "pt", label: "Português" },
 ];
