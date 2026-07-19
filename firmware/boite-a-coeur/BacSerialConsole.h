@@ -147,7 +147,7 @@ private:
         exportConfigLine("build_semester", c.buildSemester);
         exportConfigLine("hw_revision", c.hwRevision.length() ? c.hwRevision : String("BaC-S3-v1"));
         exportConfigLine("api_url", c.apiUrl.length() ? c.apiUrl : String("https://boite-a-coeur.fr"));
-        exportConfigLine("api_secret", c.apiSecret);
+        printSecretField("api_secret", c.apiSecret);
         exportConfigLine("region", c.region);
         exportConfigLine("old_boot_status", c.oldBootStatus);
         if (c.tzOffsetValid) {
