@@ -1,6 +1,7 @@
-import { ScrollView, StyleSheet } from "react-native";
+import { Linking, ScrollView, StyleSheet } from "react-native";
 import { useRouter } from "expo-router";
 import { NavMenuGroup, NavMenuItem, Screen } from "@/components/ui";
+import { COOKIES_POLICY_URL, DELETE_ACCOUNT_URL } from "@/data/legal";
 import { spacing } from "@/theme/theme";
 
 export default function LegalHubScreen() {
@@ -23,6 +24,16 @@ export default function LegalHubScreen() {
             title="Mentions légales"
             icon="information-circle"
             onPress={() => router.push("/legal/legal")}
+          />
+          <NavMenuItem
+            title="Mes données personnelles"
+            icon="document-outline"
+            onPress={() => Linking.openURL(DELETE_ACCOUNT_URL)}
+          />
+          <NavMenuItem
+            title="Politique cookies"
+            icon="globe-outline"
+            onPress={() => Linking.openURL(COOKIES_POLICY_URL)}
             last
           />
         </NavMenuGroup>
