@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Boîte à Cœur — Contrôle de production</title>
+<link rel="icon" href="data:,">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
@@ -199,7 +200,7 @@ input[type=checkbox]{accent-color:var(--accent);width:15px;height:15px;cursor:po
           <span class="chip"><span class="d"></span><span id="lastUpdated">en attente</span></span>
           <div style="display:flex;gap:8px;align-items:center;">
             <span class="chip bad" id="keyChip"><span class="d"></span><span id="keyStatus">aucune clé</span></span>
-            <button class="btn ghost" id="btnKey">Clé admin</button>
+            <button class="btn ghost" id="btnKey">Clés API</button>
           </div>
         </div>
       </div>
@@ -354,17 +355,29 @@ let devicesCache = [];
 let statsCache = null;
 let refreshTimer = null;
 
-function adminKey(){ return localStorage.getItem('ota_admin_key') || ''; }
+function adminKey(){ return localStorage.getItem('admin_api_key') || ''; }
+function otaAdminKey(){ return localStorage.getItem('ota_admin_key') || ''; }
 function hasKey(){ return adminKey() !== ''; }
-function adminHeaders(extra){ return { 'X-Ota-Admin-Key': adminKey(), ...(extra||{}) }; }
+function hasOtaKey(){ return otaAdminKey() !== ''; }
+function isOtaPath(path){ return path.indexOf('/updates') === 0; }
+function apiHeaders(path, extra){
+  if(isOtaPath(path)){
+    const key = otaAdminKey();
+    if(!key) throw new Error('clé OTA manquante (OTA_ADMIN_KEY)');
+    return { 'X-Ota-Admin-Key': key, ...(extra||{}) };
+  }
+  const key = adminKey();
+  if(!key) throw new Error('clé admin manquante (ADMIN_API_KEY)');
+  return { 'X-Admin-Key': key, ...(extra||{}) };
+}
 async function apiGet(path){
-  const res = await fetch(api+path, { headers: adminHeaders() });
+  const res = await fetch(api+path, { headers: apiHeaders(path) });
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || ('HTTP '+res.status));
   return data;
 }
 async function apiPost(path, body, isForm){
-  const opts = { method:'POST', headers: adminHeaders(isForm ? undefined : {'Content-Type':'application/json'}) };
+  const opts = { method:'POST', headers: apiHeaders(path, isForm ? undefined : {'Content-Type':'application/json'}) };
   opts.body = isForm ? body : JSON.stringify(body||{});
   const res = await fetch(api+path, opts);
   const data = await res.json().catch(()=>({}));
@@ -373,11 +386,32 @@ async function apiPost(path, body, isForm){
 }
 
 function fmtBytes(n){ if(n==null) return '-'; if(n>=1048576) return (n/1048576).toFixed(1)+'M'; if(n>=1024) return Math.round(n/1024)+'K'; return n+'B'; }
+function formatNotifyResults(r){
+  const lines = [(r.enqueued||0)+'/'+(r.requested||0)+' enqueue'];
+  (r.results||[]).forEach(x=>{
+    if(x.enqueued) lines.push('#'+x.device_id+': OK'+(x.release_version?' → '+x.release_version:''));
+    else lines.push('#'+x.device_id+': '+(x.reason||'ignore'));
+  });
+  return lines.join(' · ');
+}
 function fmtUptime(s){ if(s==null) return '-'; const d=Math.floor(s/86400),h=Math.floor((s%86400)/3600),m=Math.floor((s%3600)/60); if(d>0) return d+'j'+h+'h'; if(h>0) return h+'h'+m+'m'; return m+'m'; }
 function fmtSeen(ts){ if(!ts) return 'jamais'; const t=Date.parse(ts.replace(' ','T')); if(isNaN(t)) return ts; const d=Math.floor((Date.now()-t)/1000); if(d<60) return d+'s'; if(d<3600) return Math.floor(d/60)+'min'; if(d<86400) return Math.floor(d/3600)+'h'; return Math.floor(d/86400)+'j'; }
 function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
 
-function setKeyStatus(){ const k=localStorage.getItem('ota_admin_key')||''; document.getElementById('keyStatus').textContent = k ? 'clé définie' : 'aucune clé'; const chip=document.getElementById('keyChip'); if(chip){ chip.classList.toggle('good', !!k); chip.classList.toggle('bad', !k); } }
+function setKeyStatus(){
+  const admin = adminKey();
+  const ota = otaAdminKey();
+  let label = 'aucune clé';
+  if(admin && ota) label = 'flotte + OTA';
+  else if(admin) label = 'flotte seule';
+  else if(ota) label = 'OTA seule';
+  document.getElementById('keyStatus').textContent = label;
+  const chip=document.getElementById('keyChip');
+  if(chip){
+    chip.classList.toggle('good', !!admin && !!ota);
+    chip.classList.toggle('bad', !admin || !ota);
+  }
+}
 function setNum(k,v){ const el=document.querySelector('.numeral[data-k="'+k+'"]'); if(el) el.textContent = v; }
 
 function renderStats(s){
@@ -507,7 +541,15 @@ async function openDetail(id){
 }
 async function detailAction(path,body,label){
   const log=document.getElementById('dLog'); log.textContent=label+'...';
-  try{ const r=await apiPost(path,body); const res=(r.results&&r.results[0])||{}; log.textContent = res.enqueued ? (label+' envoyé') : (label+' ignoré: '+(res.reason||'')); refreshFleet(); }
+  try{
+    const r=await apiPost(path,body);
+    if(path.indexOf('notify-batch')>=0) log.textContent=formatNotifyResults(r);
+    else{
+      const res=(r.results&&r.results[0])||{};
+      log.textContent = res.enqueued ? (label+' envoyé') : (label+' ignoré: '+(res.reason||''));
+    }
+    refreshFleet();
+  }
   catch(e){ log.textContent='Erreur: '+e.message; }
 }
 function closeDetail(){ document.getElementById('detailOverlay').classList.remove('open'); }
@@ -556,7 +598,16 @@ function exportCsv(){
   URL.revokeObjectURL(url);
 }
 
-document.getElementById('btnKey').addEventListener('click',()=>{ const k=prompt('Clé admin (OTA_ADMIN_KEY)',localStorage.getItem('ota_admin_key')||''); if(k!==null){ localStorage.setItem('ota_admin_key',k); setKeyStatus(); refreshAll(); } });
+document.getElementById('btnKey').addEventListener('click',()=>{
+  const admin=prompt('Clé flotte (ADMIN_API_KEY)',adminKey());
+  if(admin===null) return;
+  const ota=prompt('Clé OTA (OTA_ADMIN_KEY)',otaAdminKey());
+  if(ota===null) return;
+  localStorage.setItem('admin_api_key',admin.trim());
+  localStorage.setItem('ota_admin_key',ota.trim());
+  setKeyStatus();
+  refreshAll();
+});
 document.getElementById('btnRefresh').addEventListener('click',refreshFleet);
 document.getElementById('btnExport').addEventListener('click',exportCsv);
 ['fltQ','fltVersion','fltOnline','fltRegion','fltClaimed'].forEach(id=>{
@@ -574,7 +625,7 @@ document.getElementById('btnBatchNotify').addEventListener('click',async()=>{
   const releaseId=document.getElementById('batchRelease').value;
   const force=document.getElementById('batchForce').checked;
   const log=document.getElementById('actionLog'); log.className='note'; log.textContent='Envoi OTA vers '+ids.length+' appareil(s)...';
-  try{ const body={device_ids:ids,force}; if(releaseId) body.release_id=parseInt(releaseId,10); const r=await apiPost('/admin/devices/notify-batch',body); log.textContent='OTA enqueue: '+r.enqueued+'/'+r.requested; refreshFleet(); }
+  try{ const body={device_ids:ids,force}; if(releaseId) body.release_id=parseInt(releaseId,10); const r=await apiPost('/admin/devices/notify-batch',body); log.textContent=formatNotifyResults(r); refreshFleet(); }
   catch(e){ log.className='note err'; log.textContent='Erreur: '+e.message; }
 });
 document.getElementById('cmdType').addEventListener('change',e=>{
@@ -607,8 +658,10 @@ document.getElementById('detailOverlay').addEventListener('click',e=>{ if(e.targ
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeDetail(); });
 
 async function refreshAll(){
-  if(!hasKey()){ document.getElementById('fleetLog').textContent='Définir la clé admin pour charger la flotte.'; return; }
-  await refreshFleet(); await loadReleases();
+  if(!hasKey()){ document.getElementById('fleetLog').textContent='Définir les clés API (flotte + OTA) pour charger le tableau de bord.'; return; }
+  await refreshFleet();
+  if(hasOtaKey()) await loadReleases();
+  else document.getElementById('releasesBody').innerHTML='<tr><td colspan="6"><span class="note err">Clé OTA manquante (OTA_ADMIN_KEY) — section Mises à jour indisponible.</span></td></tr>';
 }
 function startAutoRefresh(){
   if(refreshTimer) clearInterval(refreshTimer);
