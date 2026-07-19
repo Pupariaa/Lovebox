@@ -10,12 +10,11 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface as Handler;
 
-// Fixed-window per-IP rate limiter backed by the local filesystem (no external dependency).
-// Protects brute-force sensitive endpoints (auth, device registration/authentication). Fails open
-// if the counter storage is not writable so a storage issue never blocks legitimate traffic.
 final class RateLimitMiddleware implements MiddlewareInterface
 {
     private string $dir;
+    /** @var list<string> */
+    private array $trustedProxies;
 
     public function __construct(
         private string $bucket,
@@ -26,10 +25,16 @@ final class RateLimitMiddleware implements MiddlewareInterface
         if (!is_dir($this->dir)) {
             @mkdir($this->dir, 0700, true);
         }
+        $settings = require dirname(__DIR__, 2) . '/config/settings.php';
+        $this->trustedProxies = $settings['security']['trusted_proxies'] ?? [];
     }
 
     public function process(Request $request, Handler $handler): Response
     {
+        if (!is_dir($this->dir) || !is_writable($this->dir)) {
+            return JsonResponse::error(new \Slim\Psr7\Response(), 'rate limit storage unavailable', 503);
+        }
+
         $ip = $this->clientIp($request);
         $now = time();
         $windowStart = $now - ($now % $this->windowSeconds);
@@ -37,6 +42,9 @@ final class RateLimitMiddleware implements MiddlewareInterface
         $file = $this->dir . DIRECTORY_SEPARATOR . $this->bucket . '_' . md5($safeIp) . '_' . $windowStart;
 
         $count = $this->increment($file);
+        if ($count === null) {
+            return JsonResponse::error(new \Slim\Psr7\Response(), 'rate limit storage unavailable', 503);
+        }
         if ($count > $this->limit) {
             $retry = $this->windowSeconds - ($now % $this->windowSeconds);
             return JsonResponse::error(new \Slim\Psr7\Response(), 'rate limit exceeded', 429)
@@ -50,13 +58,13 @@ final class RateLimitMiddleware implements MiddlewareInterface
         return $handler->handle($request);
     }
 
-    private function increment(string $file): int
+    private function increment(string $file): ?int
     {
         $fh = @fopen($file, 'c+');
         if ($fh === false) {
-            return 0;
+            return null;
         }
-        $count = 0;
+        $count = null;
         if (flock($fh, LOCK_EX)) {
             $content = stream_get_contents($fh);
             $count = (int) $content + 1;
@@ -85,6 +93,11 @@ final class RateLimitMiddleware implements MiddlewareInterface
 
     private function clientIp(Request $request): string
     {
+        $server = $request->getServerParams();
+        $remote = isset($server['REMOTE_ADDR']) ? (string) $server['REMOTE_ADDR'] : 'unknown';
+        if ($this->trustedProxies === [] || !in_array($remote, $this->trustedProxies, true)) {
+            return $remote;
+        }
         $forwarded = $request->getHeaderLine('X-Forwarded-For');
         if ($forwarded !== '') {
             $parts = explode(',', $forwarded);
@@ -93,7 +106,6 @@ final class RateLimitMiddleware implements MiddlewareInterface
                 return $first;
             }
         }
-        $server = $request->getServerParams();
-        return isset($server['REMOTE_ADDR']) ? (string) $server['REMOTE_ADDR'] : 'unknown';
+        return $remote;
     }
 }
