@@ -32,9 +32,14 @@ final class MessageController
             return JsonResponse::error($response, 'message too large', 413);
         }
         $parsed = (array) $request->getParsedBody();
-        $scheduledAt = isset($params['scheduled_at'])
+        $scheduledRaw = isset($params['scheduled_at'])
             ? (string) $params['scheduled_at']
             : (isset($parsed['scheduled_at']) ? (string) $parsed['scheduled_at'] : null);
+        try {
+            $scheduledAt = $this->normalizeScheduledAt($scheduledRaw);
+        } catch (\InvalidArgumentException $e) {
+            return JsonResponse::error($response, $e->getMessage(), 400);
+        }
         $ephemeral = ($params['ephemeral'] ?? '0') === '1';
         if ($ephemeral) {
             $displayDuration = 10;
@@ -49,6 +54,30 @@ final class MessageController
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
         }
+    }
+
+    private function normalizeScheduledAt(?string $raw): ?string
+    {
+        if ($raw === null) {
+            return null;
+        }
+        $raw = trim($raw);
+        if ($raw === '') {
+            return null;
+        }
+        try {
+            $when = new \DateTimeImmutable($raw);
+        } catch (\Exception) {
+            throw new \InvalidArgumentException('invalid scheduled_at');
+        }
+        $now = new \DateTimeImmutable('now');
+        if ($when < $now->modify('-5 minutes')) {
+            throw new \InvalidArgumentException('scheduled_at is in the past');
+        }
+        if ($when > $now->modify('+1 year')) {
+            throw new \InvalidArgumentException('scheduled_at is too far in the future');
+        }
+        return $when->format('Y-m-d H:i:s');
     }
 
     public function sent(Request $request, Response $response): Response
