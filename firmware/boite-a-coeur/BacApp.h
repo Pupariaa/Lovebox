@@ -8,6 +8,7 @@
 #include <string.h>
 #include <esp_random.h>
 #include <ESP.h>
+#include <esp_ota_ops.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include "Projet.h"
@@ -27,6 +28,8 @@
 #include "BacOta.h"
 #include "BacAssetsOta.h"
 #include "BacOtaPayload.h"
+#include "BacBacklight.h"
+#include "BacPowerManager.h"
 
 class BacApp {
 public:
@@ -42,7 +45,7 @@ public:
     static const uint32_t TOUCH_VALID_MIN = 15000;
     static const uint32_t TOUCH_VALID_MAX = 32000;
     static const uint32_t P4_AUTO_IDLE_MS = 8000;
-    static const uint32_t SETTINGS_OPEN_MS = 5000;
+    static const uint32_t SETTINGS_OPEN_MS = 3000;
     static const uint32_t TAP_MAX_MS = 500;
     static const uint32_t MENU_SELECT_HOLD_MS = 500;
     static const uint32_t DISCONNECT_MIN_MS = 3000;
@@ -93,6 +96,15 @@ public:
         _cloudClient.begin(&_config, &BacApp::cloudMessageThunk, this);
         _cloudClient.setConfigCommandHandler(&BacApp::cloudConfigThunk, this);
         _cloudClient.setOtaOfferHandler(&BacApp::cloudOtaOfferThunk, this);
+        loadBootRecovery();
+        _backlight.applyLevel(_config.backlightLevel);
+        _power.resetActivity();
+    }
+
+    bool shouldUpdateUi() const { return _power.shouldRenderUi(); }
+
+    uint8_t targetFps() const {
+        return _power.targetFps(_msgSessionActive || messageViewActive());
     }
 
     void drawMessageOverlay(lucarne::Display &disp) {
@@ -109,6 +121,7 @@ public:
 
     void onCacheReady() {
         if (!_ui) return;
+        confirmFirmwareValid();
         String prevUuid = _config.uuid;
         _config.ensureValidUuid();
         if (!_config.hasValidUuid()) return;
@@ -150,11 +163,15 @@ public:
         pollP4();
         pollClock();
         pollMenuActions();
+        pollBootRecovery();
         pollPendingMessage();
         pollMessageSession();
         pollOtaPending();
         if (_httpStarted) _msgServer.tick();
         _cloudClient.tickIdle();
+        _power.tick(_config.sleepTimeoutSec, _config.displaySleepEnabled, _mode == Mode::Idle);
+        if (_power.displaySleeping) _backlight.off();
+        else _backlight.applyLevel(_config.backlightLevel);
         if (_touchEnabled) pollTouch(touchVal);
     }
 
@@ -186,6 +203,8 @@ public:
         return _ui->current()->name();
     }
     bool isWifiLinked() const { return _wifi.connected(); }
+    bool isOtaBusy() const { return _otaRunning || _otaPending; }
+    bool isIdleForService() const { return _mode == Mode::Idle; }
     bool isWifiAttemptActive() const { return _wifiAttemptActive; }
     uint32_t wifiConnectElapsedMs() const { return _wifi.connectElapsedMs(); }
     bool isBleReady() const { return _ble.isReady(); }
@@ -363,6 +382,7 @@ private:
         _ephemeralDismissAtMs = 0;
         _cloudClient.setMessageHold(true);
         if (ackId) {
+            persistMsgSession(ackId, false);
             _cloudClient.ackMessage(ackId);
             BacDebug::eventf("msg", "received id=%u", ackId);
         }
@@ -375,6 +395,8 @@ private:
         if (_mode == Mode::FirstSetup || _mode == Mode::WifiBoot) return;
         if (onCurrentScreen("message_opened")) return;
         if (onCurrentScreen("new_message") && _msgSessionActive) return;
+        _power.resetActivity();
+        _backlight.applyLevel(_config.backlightLevel);
         showNewMessageScreen();
     }
 
@@ -399,6 +421,7 @@ private:
     void openMessageView() {
         if (!_msgStore.hasMessage()) return;
         if (_activeCloudMsgId) {
+            persistMsgSession(_activeCloudMsgId, true);
             _cloudClient.openedMessage(_activeCloudMsgId);
             BacDebug::eventf("msg", "opened id=%u", _activeCloudMsgId);
         }
@@ -417,6 +440,7 @@ private:
             _cloudClient.seenMessage(_activeCloudMsgId);
             BacDebug::eventf("msg", "seen id=%u", _activeCloudMsgId);
         }
+        clearMsgSession();
         _activeCloudMsgId = 0;
         _activeDisplaySec = 0;
         _ephemeralDismissAtMs = 0;
@@ -511,6 +535,11 @@ private:
         if (_pendingFlow != PendingFlow::None) return;
         _pendingFlow = PendingFlow::FactoryReset;
         _flowStartedMs = millis();
+        _resetPctLast = -1;
+        if (_ui) {
+            _ui->setFloat("ota_pct", 0.0f);
+            _ui->invalidate();
+        }
         BAC_LOG("sys", "factory reset start");
     }
 
@@ -553,22 +582,97 @@ private:
         }
 
         if (_pendingFlow == PendingFlow::FactoryReset) {
+            int pct = (int)((uint64_t)elapsed * 100 / FACTORY_RESET_MIN_MS);
+            if (pct > 100) pct = 100;
+            if (pct != _resetPctLast && _ui) {
+                _resetPctLast = pct;
+                _ui->setFloat("ota_pct", (float)pct);
+                _ui->invalidate();
+            }
             if (elapsed < FACTORY_RESET_MIN_MS) return;
             performFactoryReset();
         }
     }
 
     void performFactoryReset() {
+        // Notify the backend so it can delete this device row while WiFi and the device secret are
+        // still valid. This is the very last online action before credentials are erased.
+        if (_config.wifiConfigured() && _config.apiSecret.length()) {
+            _cloudClient.setOtaHold(true);
+            delay(250);
+            bool ok = _cloudClient.deregisterDevice();
+            BAC_LOGF("sys", "deregister %s", ok ? "ok" : "failed");
+        }
         _config.ssid = "";
         _config.psw = "";
         _config.configured = false;
         _config.claimed = false;
         _config.apiSecret = "";
         _config.save();
+        clearMsgSession();
         _pendingFlow = PendingFlow::None;
         BAC_LOG("sys", "factory reset restart");
         delay(100);
         ESP.restart();
+    }
+
+    // --- Message session persistence (server source-of-truth recovery) ---
+    // The active cloud message id is stored in NVS so a power loss mid-session is reconciled on the
+    // next boot: an already-opened message is closed with 'seen' (consumed), a received-but-not-opened
+    // one is left untouched so the server requeue redelivers it (never silently lost).
+    void persistMsgSession(uint32_t messageId, bool opened) {
+        Preferences prefs;
+        if (!prefs.begin("bacmsg", false)) return;
+        prefs.putUInt("active", messageId);
+        prefs.putBool("opened", opened);
+        prefs.end();
+    }
+
+    void clearMsgSession() {
+        Preferences prefs;
+        if (!prefs.begin("bacmsg", false)) return;
+        prefs.remove("active");
+        prefs.remove("opened");
+        prefs.end();
+    }
+
+    void loadBootRecovery() {
+        Preferences prefs;
+        if (!prefs.begin("bacmsg", true)) {
+            _bootRecoverDone = true;
+            return;
+        }
+        _bootRecoverMsgId = prefs.getUInt("active", 0);
+        _bootRecoverOpened = prefs.getBool("opened", false);
+        prefs.end();
+        _bootRecoverDone = (_bootRecoverMsgId == 0);
+    }
+
+    void pollBootRecovery() {
+        if (_bootRecoverDone) return;
+        if (!_wifi.connected() || !_config.apiSecret.length()) return;
+        if (_bootRecoverOpened) {
+            _cloudClient.seenMessage(_bootRecoverMsgId);
+            BacDebug::eventf("msg", "boot recover seen id=%u", _bootRecoverMsgId);
+        } else {
+            BacDebug::eventf("msg", "boot recover requeue id=%u", _bootRecoverMsgId);
+        }
+        clearMsgSession();
+        _bootRecoverMsgId = 0;
+        _bootRecoverDone = true;
+    }
+
+    void confirmFirmwareValid() {
+        if (_fwMarkedValid) return;
+        _fwMarkedValid = true;
+        const esp_partition_t *running = esp_ota_get_running_partition();
+        if (!running) return;
+        esp_ota_img_states_t state;
+        if (esp_ota_get_state_partition(running, &state) != ESP_OK) return;
+        if (state != ESP_OTA_IMG_PENDING_VERIFY) return;
+        if (esp_ota_mark_app_valid_cancel_rollback() == ESP_OK) {
+            BacDebug::event("ota", "firmware marked valid");
+        }
     }
 
     void onCloudCommand(const char *json) {
@@ -586,14 +690,31 @@ private:
             queueOtaFromPayload(payload, cmdId);
             return;
         }
+        if (type == "reboot") {
+            uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
+            if (cmdId) _cloudClient.ackCommand(cmdId);
+            BacDebug::event("sys", "remote reboot");
+            delay(200);
+            ESP.restart();
+            return;
+        }
+        if (type == "factory_reset") {
+            uint32_t cmdId = BacCloudClient::extractJsonUInt(body, "command_id");
+            if (cmdId) _cloudClient.ackCommand(cmdId);
+            BacDebug::event("sys", "remote factory reset");
+            startFactoryResetFlow();
+            return;
+        }
         if (type.length() && type != "config") return;
+        uint32_t configCmdId = BacCloudClient::extractJsonUInt(body, "command_id");
+        String configBody = BacCloudClient::extractJsonObject(body, "payload");
+        if (configBody.length()) body = configBody;
         int idx = body.indexOf("\"display_name\":\"");
         if (idx >= 0) {
             idx += 16;
             int end = body.indexOf('"', idx);
             if (end > idx) {
                 _config.displayName = body.substring(idx, end);
-                applyDeviceName();
                 _config.save();
             }
         }
@@ -606,6 +727,38 @@ private:
                 _config.save();
             }
         }
+        idx = body.indexOf("\"locale\":\"");
+        if (idx >= 0) {
+            idx += 10;
+            int end = body.indexOf('"', idx);
+            if (end > idx) {
+                _config.locale = body.substring(idx, end);
+                _config.save();
+            }
+        }
+        idx = body.indexOf("\"backlight_level\":");
+        if (idx >= 0) {
+            _config.backlightLevel = (uint8_t)constrain(body.substring(idx + 18).toInt(), 0, 100);
+            _config.save();
+        }
+        idx = body.indexOf("\"sleep_timeout_s\":");
+        if (idx >= 0) {
+            _config.sleepTimeoutSec = (uint16_t)constrain(body.substring(idx + 17).toInt(), 5, 600);
+            _config.save();
+        }
+        if (body.indexOf("\"display_sleep_enabled\":true") >= 0) {
+            _config.displaySleepEnabled = true;
+            _config.save();
+        } else if (body.indexOf("\"display_sleep_enabled\":false") >= 0) {
+            _config.displaySleepEnabled = false;
+            _config.save();
+        }
+        applyDeviceName();
+        applyUiLocale();
+        updateClockLabels(true);
+        _power.resetActivity();
+        _backlight.applyLevel(_config.backlightLevel);
+        if (configCmdId) _cloudClient.ackCommand(configCmdId);
     }
 
     void onOtaOffer(const char *json) {
@@ -686,17 +839,18 @@ private:
         goInstant(&projet::screen_scr_mr3hcyofj);
         projet::w90.setText(BacLocale::ota_progress);
         projet::w91.setText(BacLocale::ota_warn);
+        if (_ui) _ui->setFloat("ota_pct", 0.0f);
         if (_ui) _ui->invalidate();
-        xTaskCreatePinnedToCore(&BacApp::otaTaskEntry, "bacOta", 16384, this, 2, &_otaTask, 1);
+        xTaskCreatePinnedToCore(&BacApp::otaTaskEntry, "bacOta", 24576, this, 2, &_otaTask, 1);
     }
 
     void onOtaProgress(int percent) {
         if (percent < 0) percent = 0;
         if (percent > 100) percent = 100;
-        char buf[48];
-        snprintf(buf, sizeof(buf), "%s %d%%", BacLocale::ota_progress, percent);
-        projet::w90.setText(buf);
-        if (_ui) _ui->invalidate();
+        if (_ui) {
+            _ui->setFloat("ota_pct", (float)percent);
+            _ui->invalidate();
+        }
     }
 
     void otaTaskBody() {
@@ -705,21 +859,29 @@ private:
             BacDebug::event("ota", "firmware skip, already current");
             needFw = false;
         }
-        bool fwOk = true;
         bool shaFail = false;
-        if (needFw) {
-            fwOk = BacOta::installFromUrl(_otaPayload.fwUrl, _otaPayload.fwSize, _otaPayload.fwSha256,
-                                            &BacApp::otaProgressThunk, this, &shaFail);
-        }
+
+        // Assets are installed before firmware on purpose: BacOta commits the new boot
+        // partition as soon as Update.end(true) runs, so a later assets failure would
+        // leave the device pointing at fresh firmware paired with stale/incomplete assets
+        // (and a random rollback on the next reset). Doing assets first means a failed
+        // assets install never touches the firmware slot.
         bool assetsOk = true;
-        if (fwOk && _otaPayload.hasAssets()) {
+        if (_otaPayload.hasAssets()) {
             bool assetsShaFail = false;
             assetsOk = BacAssetsOta::installPackFromUrl(_otaPayload.assetsUrl, _otaPayload.assetsSize,
                                                         _otaPayload.assetsSha256, &BacApp::otaProgressThunk, this,
-                                                        &assetsShaFail);
+                                                        &assetsShaFail, _otaPayload.version,
+                                                        _otaPayload.assetsManifestUrl);
             if (assetsShaFail) shaFail = true;
         }
-        bool ok = fwOk && assetsOk;
+
+        bool fwOk = true;
+        if (assetsOk && needFw) {
+            fwOk = BacOta::installFromUrl(_otaPayload.fwUrl, _otaPayload.fwSize, _otaPayload.fwSha256,
+                                          &BacApp::otaProgressThunk, this, &shaFail);
+        }
+        bool ok = assetsOk && fwOk;
         uint32_t cmdId = _otaCommandId;
         if (ok && cmdId) _cloudClient.ackCommand(cmdId);
         if (!ok && cmdId) _cloudClient.failCommand(cmdId);
@@ -778,7 +940,18 @@ private:
         }
         if (p1 && p1[1]) _config.locale = String(p1 + 1);
         if (p2 && p2[1]) _config.region = String(p2 + 1);
+        char *p3 = p2 ? strchr(p2 + 1, '|') : nullptr;
+        if (p3) *p3 = 0;
+        char *p4 = p3 ? strchr(p3 + 1, '|') : nullptr;
+        if (p4) *p4 = 0;
+        char *p5 = p4 ? strchr(p4 + 1, '|') : nullptr;
+        if (p5) *p5 = 0;
+        if (p3 && p3[1]) _config.backlightLevel = (uint8_t)constrain(atoi(p3 + 1), 0, 100);
+        if (p4 && p4[1]) _config.sleepTimeoutSec = (uint16_t)constrain(atoi(p4 + 1), 5, 600);
+        if (p5 && p5[1]) _config.displaySleepEnabled = p5[1] != '0';
         _config.save();
+        _backlight.applyLevel(_config.backlightLevel);
+        _power.resetActivity();
         applyUiLocale();
         updateClockLabels(true);
         BAC_LOG("ble", "config updated");
@@ -810,7 +983,7 @@ private:
         if (strcmp(screen->name(), "settings_wifi_test") == 0) {
             startWifiTestFlow();
         }
-        if (strcmp(screen->name(), "settings_fatory_reseting") == 0) {
+        if (strcmp(screen->name(), "settings_factory_reseting") == 0) {
             startFactoryResetFlow();
         }
         if (strcmp(screen->name(), "idle") == 0 && _mode == Mode::Settings) {
@@ -990,6 +1163,7 @@ private:
         _wasTouchPressed = false;
         _touchEnabled = true;
         closeBleProvisioning(false);
+        _ble.openIdleAdvertising();
         go(&projet::screen_scr_mqzyaiw41j);
         updateClockLabels(true);
         startMessageServer();
@@ -1048,6 +1222,10 @@ private:
         if (!touchSampleValid(v)) return;
         bool pressed = touchPressed(v, _wasTouchPressed);
         uint32_t now = millis();
+        if (pressed && !_wasTouchPressed) {
+            _power.resetActivity();
+            _backlight.applyLevel(_config.backlightLevel);
+        }
 
         if (now < _touchArmUntilMs) {
             _wasTouchPressed = pressed;
@@ -1120,13 +1298,6 @@ private:
                 uint32_t dur = now - _touchPressStartMs;
                 if (dur < TAP_MAX_MS && _ui->activeMenu()) {
                     _ui->next();
-                }
-            }
-        } else if (_mode == Mode::Idle && onCurrentScreen("idle")) {
-            if (!pressed && _wasTouchPressed && !_touchSettingsFired) {
-                uint32_t dur = now - _touchPressStartMs;
-                if (dur < TAP_MAX_MS) {
-                    BAC_LOG("ui", "send heart");
                 }
             }
         } else if (onCurrentScreen("message_opened")) {
@@ -1206,7 +1377,8 @@ private:
         char macBuf[18];
         snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
                  mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-        projet::w80.setText(macBuf);
+        _infoMacText = macBuf;
+        projet::w80.setText(_infoMacText.c_str());
         applyDeviceName();
     }
 
@@ -1229,7 +1401,7 @@ private:
         projet::w8.setText(BacLocale::splash_boot);
         projet::w11.setText(BacLocale::welcome_l1);
         projet::w12.setText(BacLocale::welcome_l2);
-        projet::w14.setText(BacLocale::next);
+        projet::w15.setText(BacLocale::next);
         projet::w17.setText(BacLocale::new_message);
         projet::w19.setText(BacLocale::open_msg);
         if (_msgSessionActive && onCurrentScreen("new_message")) {
@@ -1269,8 +1441,8 @@ private:
         projet::w84.setText(BacLocale::factory_q2);
         projet::w85.setText(BacLocale::factory_q3);
         projet::w86.setText(BacLocale::factory_q4);
-        projet::w88.setText(BacLocale::factory_progress);
-        projet::w89.setText(BacLocale::factory_warn);
+        projet::w87.setText(BacLocale::factory_progress);
+        projet::w88.setText(BacLocale::factory_warn);
         projet::w90.setText(BacLocale::ota_progress);
         projet::w91.setText(BacLocale::ota_warn);
         if (_ui) _ui->invalidate();
@@ -1343,6 +1515,8 @@ private:
     BacMessageServer _msgServer;
     BacMessageRenderer _msgRenderer;
     BacCloudClient _cloudClient;
+    BacBacklight _backlight;
+    BacPowerManager _power;
     Mode _mode = Mode::Caching;
     FirstStep _first = FirstStep::P1;
     PendingFlow _pendingFlow = PendingFlow::None;
@@ -1361,6 +1535,9 @@ private:
     uint32_t _activeDisplaySec = 0;
     uint32_t _ephemeralDismissAtMs = 0;
     bool _msgSessionActive = false;
+    uint32_t _bootRecoverMsgId = 0;
+    bool _bootRecoverOpened = false;
+    bool _bootRecoverDone = false;
     uint8_t *_pendingMsgBuf = nullptr;
     size_t _pendingMsgLen = 0;
     bool _wasTouchPressed = false;
@@ -1386,6 +1563,8 @@ private:
     String _clockDateText;
     String _deviceLabelText;
     String _infoBuildText;
+    String _infoMacText;
+    int _resetPctLast = -1;
     volatile bool _otaPending = false;
     volatile bool _otaRunning = false;
     volatile bool _otaFailed = false;
@@ -1396,6 +1575,7 @@ private:
     uint8_t _otaShaFailCount = 0;
     BacOtaPayload _otaPayload = {};
     TaskHandle_t _otaTask = nullptr;
+    bool _fwMarkedValid = false;
 };
 
 #else
