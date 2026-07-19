@@ -109,7 +109,9 @@ final class OtaController
             return JsonResponse::error($response, 'invalid id', 400);
         }
         try {
-            $data = $this->ota->publish($id);
+            $body = (array) ($request->getParsedBody() ?? []);
+            $notify = !array_key_exists('notify', $body) || filter_var($body['notify'], FILTER_VALIDATE_BOOLEAN);
+            $data = $this->ota->publish($id, $notify);
             return JsonResponse::ok($response, ['ok' => true] + $data);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
