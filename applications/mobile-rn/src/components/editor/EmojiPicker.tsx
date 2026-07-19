@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -6,13 +6,13 @@ import {
   ScrollView,
   StyleSheet,
   View,
+  type ViewToken,
 } from "react-native";
-import { Image } from "expo-image";
 import { AppText, TextField } from "@/components/ui";
+import { EmojiThumb } from "@/components/editor/EmojiThumb";
 import {
   EMOJI_CATEGORIES,
   emojiRef,
-  fluentIconUrl,
   searchEmojis,
   type FluentManifestIcon,
 } from "@/domain/bacm/fluentEmoji";
@@ -33,21 +33,49 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const COLUMNS = 5;
 const THUMB = 46;
-const PAGE = 40;
+const PAGE = 60;
 
 type Props = {
   onSelect: (ref: string) => void;
 };
 
+type CellProps = {
+  item: FluentManifestIcon;
+  onSelect: (ref: string) => void;
+  animate: boolean;
+};
+
+// Memoized so a scroll that only flips which cells are on screen re-renders just the cells whose
+// `animate` flag actually changed, not the whole visible window.
+const EmojiCell = memo(
+  function EmojiCell({ item, onSelect, animate }: CellProps) {
+    return (
+      <Pressable style={styles.cell} onPress={() => onSelect(emojiRef(item.id))}>
+        <EmojiThumb
+          refId={emojiRef(item.id)}
+          size={THUMB}
+          bgColor={colors.surfaceDark}
+          animate={animate}
+        />
+      </Pressable>
+    );
+  },
+  (prev, next) =>
+    prev.item.id === next.item.id &&
+    prev.animate === next.animate &&
+    prev.onSelect === next.onSelect,
+);
+
 export function EmojiPicker({ onSelect }: Props) {
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
   const [visibleCount, setVisibleCount] = useState(PAGE);
+  const [visibleIds, setVisibleIds] = useState<Set<string>>(new Set());
 
   const categories = useMemo(() => ["all", ...EMOJI_CATEGORIES], []);
 
   const allResults = useMemo(
-    () => searchEmojis(query, category, query.trim() ? 300 : 500),
+    () => searchEmojis(query, category, query.trim() ? 400 : 800),
     [query, category],
   );
 
@@ -72,20 +100,26 @@ export function EmojiPicker({ onSelect }: Props) {
     setVisibleCount(PAGE);
   };
 
-  const renderItem = useCallback(
-    ({ item }: { item: FluentManifestIcon }) => {
-      const uri = fluentIconUrl(item.id);
-      return (
-        <Pressable style={styles.cell} onPress={() => onSelect(emojiRef(item.id))}>
-          {uri ? (
-            <Image source={{ uri }} style={styles.thumb} contentFit="contain" />
-          ) : (
-            <View style={styles.thumbPlaceholder} />
-          )}
-        </Pressable>
-      );
+  // Stable refs: React Native forbids changing these props across renders.
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 40,
+    minimumViewTime: 80,
+  }).current;
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }: { viewableItems: ViewToken[] }) => {
+      const ids = new Set<string>();
+      for (const token of viewableItems) {
+        if (token.isViewable && token.item) ids.add((token.item as FluentManifestIcon).id);
+      }
+      setVisibleIds(ids);
     },
-    [onSelect],
+  ).current;
+
+  const renderItem = useCallback(
+    ({ item }: { item: FluentManifestIcon }) => (
+      <EmojiCell item={item} onSelect={onSelect} animate={visibleIds.has(item.id)} />
+    ),
+    [onSelect, visibleIds],
   );
 
   const header = (
@@ -118,7 +152,7 @@ export function EmojiPicker({ onSelect }: Props) {
         ))}
       </ScrollView>
       <AppText variant="caption" muted>
-        {allResults.length} emojis animés
+        {allResults.length} emojis animés.
       </AppText>
     </View>
   );
@@ -128,16 +162,19 @@ export function EmojiPicker({ onSelect }: Props) {
       data={results}
       keyExtractor={(item) => item.id}
       numColumns={COLUMNS}
+      extraData={visibleIds}
       ListHeaderComponent={header}
       columnWrapperStyle={styles.gridRow}
       contentContainerStyle={styles.listContent}
       keyboardShouldPersistTaps="handled"
       removeClippedSubviews
-      initialNumToRender={20}
-      maxToRenderPerBatch={20}
-      windowSize={5}
+      initialNumToRender={30}
+      maxToRenderPerBatch={30}
+      windowSize={7}
+      viewabilityConfig={viewabilityConfig}
+      onViewableItemsChanged={onViewableItemsChanged}
       onEndReached={loadMore}
-      onEndReachedThreshold={0.4}
+      onEndReachedThreshold={0.5}
       renderItem={renderItem}
       ListFooterComponent={
         visibleCount < allResults.length ? (
@@ -185,17 +222,6 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceDark,
     alignItems: "center",
     justifyContent: "center",
-  },
-  thumb: {
-    width: THUMB,
-    height: THUMB,
-  },
-  thumbPlaceholder: {
-    width: THUMB,
-    height: THUMB,
-    backgroundColor: colors.outline,
-    opacity: 0.3,
-    borderRadius: radius.sm,
   },
   footer: {
     marginVertical: spacing.md,
