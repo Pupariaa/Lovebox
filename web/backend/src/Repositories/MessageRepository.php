@@ -89,7 +89,7 @@ final class MessageRepository
         }
     }
 
-    public function requeueStaleActiveForDevice(int $deviceId, int $olderThanSeconds = 600): int
+    public function requeueStaleActiveForDevice(int $deviceId, int $olderThanSeconds = 120): int
     {
         $stmt = $this->pdo->prepare(
             "UPDATE messages SET status = 'queued', delivered_at = NULL, acked_at = NULL, opened_at = NULL
@@ -98,6 +98,19 @@ final class MessageRepository
                AND COALESCE(opened_at, acked_at, delivered_at) < DATE_SUB(NOW(), INTERVAL :sec SECOND)"
         );
         $stmt->execute(['did' => $deviceId, 'sec' => $olderThanSeconds]);
+        return $stmt->rowCount();
+    }
+
+    // Global reconciliation across all devices. Poll-independent: safe to call from a cron job so a
+    // powered-off box that left a message stuck in 'received'/'opened' never blocks its queue forever.
+    public function requeueStaleActiveAll(int $olderThanSeconds = 120): int
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages SET status = 'queued', delivered_at = NULL, acked_at = NULL, opened_at = NULL
+             WHERE status IN ('delivering', 'received', 'opened')
+               AND COALESCE(opened_at, acked_at, delivered_at) < DATE_SUB(NOW(), INTERVAL :sec SECOND)"
+        );
+        $stmt->execute(['sec' => $olderThanSeconds]);
         return $stmt->rowCount();
     }
 
@@ -125,11 +138,11 @@ final class MessageRepository
         return $stmt->rowCount();
     }
 
-    public function claimNextQueued(int $deviceId): ?array
+    public function claimNextQueued(int $deviceId, int $staleActiveSeconds = 120): ?array
     {
         $this->requeueStaleDelivering();
         $this->requeueStaleDeliveringForDevice($deviceId, 120);
-        $this->requeueStaleActiveForDevice($deviceId, 600);
+        $this->requeueStaleActiveForDevice($deviceId, $staleActiveSeconds);
         $this->pdo->beginTransaction();
         try {
             $stmt = $this->pdo->prepare(
@@ -224,6 +237,30 @@ final class MessageRepository
         return $stmt->fetchAll();
     }
 
+    public function listReceived(int $userId, int $limit, int $offset): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT m.id AS message_id, m.target_device_id, m.opened_at, m.seen_at, m.created_at,
+                    l.preview_base64,
+                    COALESCE(NULLIF(d.display_name, ''), d.device_name) AS device_name,
+                    u.first_name AS sender_first_name
+             FROM messages m
+             JOIN devices d ON d.id = m.target_device_id
+             LEFT JOIN sent_message_log l ON l.message_id = m.id
+             LEFT JOIN users u ON u.id = m.sender_user_id
+             WHERE d.owner_user_id = :uid
+               AND m.display_duration_sec IS NULL
+               AND m.opened_at IS NOT NULL
+             ORDER BY m.opened_at DESC
+             LIMIT :lim OFFSET :off"
+        );
+        $stmt->bindValue('uid', $userId, PDO::PARAM_INT);
+        $stmt->bindValue('lim', $limit, PDO::PARAM_INT);
+        $stmt->bindValue('off', $offset, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
     public function findSentLog(int $userId, int $logId): ?array
     {
         $stmt = $this->pdo->prepare(
@@ -244,5 +281,86 @@ final class MessageRepository
         $stmt->execute(['lid' => $messageId, 'uid' => $userId]);
         $data = $stmt->fetchColumn();
         return $data !== false ? (string) $data : null;
+    }
+
+    public function purgeSentByUser(int $userId): void
+    {
+        $stmt = $this->pdo->prepare('DELETE FROM messages WHERE sender_user_id = :uid');
+        $stmt->execute(['uid' => $userId]);
+    }
+
+    public function clearReceivedContentForOwner(int $userId): void
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE messages m
+             JOIN devices d ON d.id = m.target_device_id
+             SET m.bacm_data = '', m.status = 'seen'
+             WHERE d.owner_user_id = :uid AND m.opened_at IS NOT NULL"
+        );
+        $stmt->execute(['uid' => $userId]);
+        $stmt = $this->pdo->prepare(
+            'UPDATE sent_message_log l
+             JOIN messages m ON m.id = l.message_id
+             JOIN devices d ON d.id = m.target_device_id
+             SET l.preview_base64 = NULL
+             WHERE d.owner_user_id = :uid AND m.opened_at IS NOT NULL'
+        );
+        $stmt->execute(['uid' => $userId]);
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function listSentForExport(int $userId, int $limit = 500): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT l.id, l.message_id, l.target_device_id, l.target_device_name, l.preview_base64, l.created_at,
+                    m.status, m.bacm_data
+             FROM sent_message_log l
+             JOIN messages m ON m.id = l.message_id
+             WHERE l.sender_user_id = :uid
+             ORDER BY l.created_at DESC
+             LIMIT :lim'
+        );
+        $stmt->bindValue('uid', $userId, PDO::PARAM_INT);
+        $stmt->bindValue('lim', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $row['bacm_base64'] = isset($row['bacm_data']) && $row['bacm_data'] !== ''
+                ? base64_encode((string) $row['bacm_data'])
+                : null;
+            unset($row['bacm_data']);
+        }
+        return $rows;
+    }
+
+    /** @return list<array<string, mixed>> */
+    public function listReceivedForExport(int $userId, int $limit = 500): array
+    {
+        $stmt = $this->pdo->prepare(
+            "SELECT m.id AS message_id, m.target_device_id, m.opened_at, m.seen_at, m.created_at, m.bacm_data,
+                    l.preview_base64,
+                    COALESCE(NULLIF(d.display_name, ''), d.device_name) AS device_name,
+                    u.first_name AS sender_first_name
+             FROM messages m
+             JOIN devices d ON d.id = m.target_device_id
+             LEFT JOIN sent_message_log l ON l.message_id = m.id
+             LEFT JOIN users u ON u.id = m.sender_user_id
+             WHERE d.owner_user_id = :uid
+               AND m.display_duration_sec IS NULL
+               AND m.opened_at IS NOT NULL
+             ORDER BY m.opened_at DESC
+             LIMIT :lim"
+        );
+        $stmt->bindValue('uid', $userId, PDO::PARAM_INT);
+        $stmt->bindValue('lim', $limit, PDO::PARAM_INT);
+        $stmt->execute();
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $row['bacm_base64'] = isset($row['bacm_data']) && $row['bacm_data'] !== ''
+                ? base64_encode((string) $row['bacm_data'])
+                : null;
+            unset($row['bacm_data']);
+        }
+        return $rows;
     }
 }
