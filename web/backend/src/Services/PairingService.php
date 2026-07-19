@@ -166,11 +166,14 @@ final class PairingService
             $ago = time() - strtotime($lastSeen);
             $online = $ago < 120;
         }
+        $alias = trim((string) ($row['alias'] ?? ''));
         return [
             'pairing_id' => (int) $row['id'],
             'device_id' => (int) $row['target_device_id'],
             'device_name' => $row['device_name'],
             'display_name' => $display,
+            'alias' => $alias !== '' ? $alias : null,
+            'owner_first_name' => trim((string) ($row['owner_first_name'] ?? '')) ?: null,
             'uuid' => $row['target_uuid'],
             'serial_number' => $row['serial_number'] ?? '',
             'relationship_type' => $row['relationship_type'] ?? 'contact',
@@ -178,6 +181,17 @@ final class PairingService
             'last_seen_seconds_ago' => $ago,
             'online' => $online,
         ];
+    }
+
+    public function setAlias(int $userId, int $pairingId, ?string $alias): array
+    {
+        if ($alias !== null) {
+            $alias = mb_substr(trim($alias), 0, 64);
+        }
+        if (!$this->pairings->setAlias($pairingId, $userId, $alias)) {
+            throw new \InvalidArgumentException('pairing not found');
+        }
+        return $this->getState($userId);
     }
 
     private function randomCode(): string
