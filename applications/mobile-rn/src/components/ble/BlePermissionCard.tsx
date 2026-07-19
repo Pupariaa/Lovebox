@@ -11,11 +11,10 @@ import { colors, spacing } from "@/theme/theme";
 type Props = {
   state: BleAccessState;
   onRetry: () => void;
-  onManualWifi?: () => void;
   loading?: boolean;
 };
 
-export function BlePermissionCard({ state, onRetry, onManualWifi, loading }: Props) {
+export function BlePermissionCard({ state, onRetry, loading }: Props) {
   if (state === "ready") return null;
 
   const blocked = state === "permission_blocked";
@@ -37,9 +36,6 @@ export function BlePermissionCard({ state, onRetry, onManualWifi, loading }: Pro
         <Button label={loading ? "Vérification..." : "Réessayer"} onPress={onRetry} loading={loading} />
         {blocked ? (
           <Button label="Ouvrir les réglages" variant="secondary" onPress={openAppSettings} />
-        ) : null}
-        {onManualWifi ? (
-          <Button label="Saisir le WiFi manuellement" variant="ghost" onPress={onManualWifi} />
         ) : null}
       </View>
     </View>
