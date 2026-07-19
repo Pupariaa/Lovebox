@@ -2,6 +2,8 @@
 
 One-command production flash with full traceability.
 
+**Documentation complete (FR)** : [`GUIDE.fr.md`](GUIDE.fr.md) — versionnage, release OTA, modes factory, test USB, depannage.
+
 ## First-time setup
 
 ```powershell
@@ -12,95 +14,69 @@ pip install -r requirements.txt
 
 Requires **arduino-cli** in PATH and **Lucarne** library (sibling repo or Arduino libraries folder).
 
+## Release OTA (no device)
+
+Build, upload to server, publish **without fleet notify**. Trigger updates per device yourself.
+
+```powershell
+$env:OTA_ADMIN_KEY = "your-key"
+python factory\release.py --version 1.0.22 --set-version --upload --publish
+python factory\ota_device.py --serial BACXS32P10052026R2 --release-id 42 --force
+```
+
+Options: `--with-assets` (FFAT zip), `--notes`, `--channel`, `--min-version`. Local archive only: omit `--upload`.
+
 ## Provision a new device
 
 ```powershell
-python factory\provision.py --new
+python factory\provision.py --new --port COM5
 ```
 
-Interactive: picks serial port, generates identity, compiles firmware, builds FFAT, flashes everything, archives binaries.
-
-Or explicit:
+## Re-flash existing device (modes)
 
 ```powershell
-python factory\provision.py --new --port COM5 --version 1.0.1
+python factory\provision.py --list-modes
+python factory\provision.py --serial SERIAL --port COM5 --mode update
+python factory\provision.py --serial SERIAL --port COM5 --mode reset-same-ids
+python factory\provision.py --serial SERIAL --port COM5 --mode reset-new-ids
 ```
 
-## Re-flash existing device
+| Mode | Description |
+|------|-------------|
+| `update` | Firmware only; NVS + FFAT + WiFi/claim preserved |
+| `reset-same-ids` | Full flash; same serial + uuid; factory NVS defaults |
+| `reset-new-ids` | Full flash; same serial; new uuid; factory NVS defaults |
+
+Legacy: `--firmware-only` equals `--mode update`.
+
+### Full reflash keeping runtime config
 
 ```powershell
-python factory\provision.py --serial BACXS32W23262026R2 --port COM5
+python factory\provision.py --serial SERIAL --port COM5 --runtime-config runtime.txt
 ```
 
-### Firmware update without losing WiFi / claim
-
-Full provision rewrites NVS (`configured`, `claimed`, WiFi, `api_secret` reset). For dev firmware updates on an already configured box:
-
-```powershell
-python factory\provision.py --serial BACXS32P10052026R2 --port COM120 --firmware-only
-python factory\provision.py --serial BACXS32A10062026R2 --port COM82 --firmware-only
-```
-
-Only the app partition at `0x10000` is written; NVS and FFAT stay intact.
-
-### Full reflash while keeping runtime config
-
-On the device serial monitor, run `export config` and save the output to a file. Then:
-
-```powershell
-python factory\provision.py --serial BACXS32P10052026R2 --port COM120 --runtime-config runtime.txt
-```
-
-Factory identity (`uuid`, serial) comes from `factory/devices/{SERIAL}.user.txt`; WiFi, secrets, and claim flags are taken from the export file.
-
-## What gets flashed
+## What gets flashed (full provision)
 
 | Partition | Content |
 |-----------|---------|
 | app0 | Firmware (`BacFirmware.h` version from `factory/VERSION` or `--version`) |
 | ffat | `data/assets/` + one-shot `user.txt` (migrated to NVS on first boot) |
-| nvs | Written by device on boot after migration |
+| nvs | Factory identity + defaults (or merged runtime export) |
 
 ## Traceability
 
-Each provision creates:
-
-```
-factory/archives/{SERIAL}/{timestamp}/
-  manifest.json       device + version + sha256
-  identity.json
-  user.txt
-  boite-a-coeur.ino.bin
-  ffat.bin
-  bootloader / partitions / boot_app0
-```
-
-`factory/registry.json` tracks all devices and `provision_history`.
-
-List devices:
+- Provision: `factory/archives/{SERIAL}/{timestamp}/`
+- Release: `factory/releases/{VERSION}/{timestamp}/`
+- Registry: `factory/registry.json`
 
 ```powershell
 python factory\provision.py --list-devices
 ```
 
-## OTA test on one device
+## Version
 
-CLI:
+Edit `factory/VERSION` or pass `--version X.Y.Z`. Current: see `factory/VERSION`.
 
-```powershell
-set OTA_ADMIN_KEY=your-key
-python factory\ota_device.py --serial BACXS32W23262026R2 --force
-python factory\ota_device.py --serial BACXS32W23262026R2 --lookup
-```
+## USB debug / direct firmware test
 
-Admin UI: `/public/updates/` section **Test device**.
-
-## Version bump
-
-Edit `factory/VERSION` before provision, or pass `--version X.Y.Z`. Current release: **1.0.10**.
-
-## Build without flash
-
-```powershell
-python factory\provision.py --new --build-only
-```
+See `firmware/boite-a-coeur/docs/USB_DEBUG.md` and `/public/bac-debug/`.
