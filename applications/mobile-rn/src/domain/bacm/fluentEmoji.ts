@@ -13,6 +13,7 @@ type ManifestIcon = {
   label: string;
   category: string;
   file: string;
+  keywords?: string;
 };
 
 export type FluentManifestIcon = ManifestIcon;
@@ -32,7 +33,38 @@ const CACHE_DIR = `${FileSystem.cacheDirectory}emoji-cache/`;
 const iconById = new Map<string, ManifestIcon>();
 M.icons.forEach((ic) => iconById.set(ic.id, ic));
 
+// Pre-computed lowercase search index so keystroke filtering avoids re-lowercasing 1000 labels.
+const searchIndex: { ic: ManifestIcon; text: string }[] = M.icons.map((ic) => ({
+  ic,
+  text: `${ic.label} ${ic.keywords ?? ""}`.toLowerCase(),
+}));
+
 export const EMOJI_CATEGORIES = M.categories;
+
+// Limit simultaneous APNG decodes: UPNG decoding blocks the JS thread, so decoding dozens of
+// picker cells at once is what makes scrolling stutter. A small semaphore keeps the UI responsive.
+const MAX_CONCURRENT_DECODES = 3;
+let activeDecodes = 0;
+const decodeWaiters: (() => void)[] = [];
+
+function acquireDecodeSlot(): Promise<void> {
+  if (activeDecodes < MAX_CONCURRENT_DECODES) {
+    activeDecodes++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => {
+    decodeWaiters.push(() => {
+      activeDecodes++;
+      resolve();
+    });
+  });
+}
+
+function releaseDecodeSlot(): void {
+  activeDecodes--;
+  const next = decodeWaiters.shift();
+  if (next) next();
+}
 
 export type LoadedEmoji = {
   frames: IconFrameData[];
@@ -64,22 +96,15 @@ export function searchEmojis(
   query: string,
   category: string | null,
   limit = 200,
-): ManifestIcon[] { 
-  let pool = M.icons;
-  if (category && category !== "all") {
-    pool = pool.filter((ic) => ic.category === category);
-  }
+): ManifestIcon[] {
   const q = query.trim().toLowerCase();
-  if (!q) {
-    if (category && category !== "all") return pool;
-    return pool.slice(0, limit);
-  }
+  const filterCat = category && category !== "all" ? category : null;
   const out: ManifestIcon[] = [];
-  for (const ic of pool) {
-    if (ic.id.indexOf(q) !== -1 || ic.label.toLowerCase().indexOf(q) !== -1) {
-      out.push(ic);
-      if (limit > 0 && out.length >= limit) break;
-    }
+  for (const entry of searchIndex) {
+    if (filterCat && entry.ic.category !== filterCat) continue;
+    if (q && entry.text.indexOf(q) === -1) continue;
+    out.push(entry.ic);
+    if (limit > 0 && out.length >= limit) break;
   }
   return out;
 }
@@ -216,10 +241,15 @@ async function loadPngThumb(
   const promise = (async () => {
     const bytes = await fetchPngBytes(url, cacheName);
     if (!bytes) return null;
-    const decoded = decodeApngBytes(bytes);
-    if (!decoded || decoded.rgbaFrames.length === 0) return null;
-    const rgba = new Uint8Array(decoded.rgbaFrames[0]);
-    return frameFromRgba(rgba, decoded.width, decoded.height, size);
+    await acquireDecodeSlot();
+    try {
+      const decoded = decodeApngBytes(bytes);
+      if (!decoded || decoded.rgbaFrames.length === 0) return null;
+      const rgba = new Uint8Array(decoded.rgbaFrames[0]);
+      return frameFromRgba(rgba, decoded.width, decoded.height, size);
+    } finally {
+      releaseDecodeSlot();
+    }
   })()
     .then((frame) => {
       thumbInflight.delete(key);
