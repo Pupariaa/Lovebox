@@ -114,11 +114,26 @@ final class DeviceRepository
         return (int) $this->pdo->lastInsertId();
     }
 
+    private const UPDATABLE_COLUMNS = [
+        'uuid',
+        'serial_number',
+        'device_name',
+        'display_name',
+        'region',
+        'region_override',
+        'locale',
+        'firmware_version',
+        'secret_hash',
+    ];
+
     public function update(int $id, array $fields): void
     {
         $sets = [];
         $params = ['id' => $id];
         foreach ($fields as $key => $value) {
+            if (!in_array($key, self::UPDATABLE_COLUMNS, true)) {
+                throw new \InvalidArgumentException('column not updatable: ' . $key);
+            }
             $sets[] = "$key = :$key";
             $params[$key] = $value;
         }
@@ -148,7 +163,6 @@ final class DeviceRepository
         return $stmt->rowCount() > 0;
     }
 
-    // Revokes the current device secret. The box re-obtains a fresh secret on its next registration.
     public function revokeSecret(int $deviceId): void
     {
         $stmt = $this->pdo->prepare('UPDATE devices SET secret_hash = NULL WHERE id = :id');
