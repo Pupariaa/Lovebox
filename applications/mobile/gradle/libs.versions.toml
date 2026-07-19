@@ -11,6 +11,7 @@ kotlinx-coroutines = "1.9.0"
 kable = "0.34.0"
 multiplatform-settings = "1.2.0"
 coil = "3.0.4"
+androidx-security-crypto = "1.1.0-alpha06"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activityCompose" }
@@ -27,6 +28,7 @@ multiplatform-settings = { module = "com.russhwolf:multiplatform-settings", vers
 multiplatform-settings-noarg = { module = "com.russhwolf:multiplatform-settings-no-arg", version.ref = "multiplatform-settings" }
 coil-compose = { module = "io.coil-kt.coil3:coil-compose", version.ref = "coil" }
 coil-network = { module = "io.coil-kt.coil3:coil-network-okhttp", version.ref = "coil" }
+androidx-security-crypto = { module = "androidx.security:security-crypto", version.ref = "androidx-security-crypto" }
 
 [plugins]
 androidApplication = { id = "com.android.application", version.ref = "agp" }
