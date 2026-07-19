@@ -3,7 +3,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { AppConfig, OAUTH_PROVIDERS, type OAuthProvider } from "@/config/AppConfig";
 import { mapApiError, parseApiErrorMessage } from "./errors";
-import { storeExternalTokens } from "./ApiClient";
+import { exchangeOAuthCode, fetchWithTimeout, storeExternalTokens } from "./ApiClient";
 
 export type OAuthResult =
   | { ok: true }
@@ -13,6 +13,8 @@ export type OAuthIntent = "login" | "register";
 
 let cachedProviders: OAuthProvider[] | null = null;
 let authSessionPrimed = false;
+let oauthCompletionInflight: Promise<OAuthResult> | null = null;
+let oauthCompletionKey: string | null = null;
 
 function primeAuthSession(): void {
   if (authSessionPrimed) return;
@@ -21,21 +23,18 @@ function primeAuthSession(): void {
 }
 
 function extractCallback(url: string): {
-  access?: string;
-  refresh?: string;
+  code?: string;
   error?: string;
 } {
   const parsed = Linking.parse(url);
   const params = parsed.queryParams ?? {};
-  const access = typeof params.access_token === "string" ? params.access_token : undefined;
-  const refresh = typeof params.refresh_token === "string" ? params.refresh_token : undefined;
+  const code = typeof params.code === "string" ? params.code : undefined;
   const error = typeof params.error === "string" ? params.error : undefined;
-  return { access, refresh, error };
+  return { code, error };
 }
 
 export async function completeOAuthFromParams(params: {
-  access_token?: string;
-  refresh_token?: string;
+  code?: string;
   error?: string;
 }): Promise<OAuthResult> {
   const error = params.error;
@@ -47,19 +46,40 @@ export async function completeOAuthFromParams(params: {
       accountNotFound: error === "account_not_found",
     };
   }
-  const access = params.access_token;
-  const refresh = params.refresh_token;
-  if (access && refresh) {
-    await storeExternalTokens(access, refresh);
-    return { ok: true };
+  const code = params.code?.trim();
+  if (!code) {
+    return { ok: false, cancelled: false, error: "Connexion OAuth interrompue. Réessaie." };
   }
-  return { ok: false, cancelled: false, error: "Tokens manquants dans la réponse OAuth." };
+  if (oauthCompletionInflight && oauthCompletionKey === code) {
+    return oauthCompletionInflight;
+  }
+  const work = (async (): Promise<OAuthResult> => {
+    try {
+      await exchangeOAuthCode(code);
+      return { ok: true };
+    } catch (e) {
+      console.error("oauth code exchange failed", e);
+      return {
+        ok: false,
+        cancelled: false,
+        error: e instanceof Error ? mapApiError(e.message) : "Échec de la connexion OAuth. Réessaie.",
+      };
+    } finally {
+      if (oauthCompletionInflight === work) {
+        oauthCompletionInflight = null;
+        oauthCompletionKey = null;
+      }
+    }
+  })();
+  oauthCompletionKey = code;
+  oauthCompletionInflight = work;
+  return work;
 }
 
 export async function fetchOAuthProviders(): Promise<OAuthProvider[]> {
   if (cachedProviders) return cachedProviders;
   try {
-    const res = await fetch(`${AppConfig.API_BASE}/api/v1/auth/oauth/providers`);
+    const res = await fetchWithTimeout(`${AppConfig.API_BASE}/api/v1/auth/oauth/providers`);
     if (!res.ok) throw new Error("providers unavailable");
     const body = (await res.json()) as { providers?: string[] };
     const allowed = new Set<string>(OAUTH_PROVIDERS);
@@ -81,12 +101,8 @@ async function startWebOAuth(provider: OAuthProvider, intent: OAuthIntent): Prom
       return { ok: false, cancelled: true };
     }
     if (result.type === "success" && result.url) {
-      const { access, refresh, error } = extractCallback(result.url);
-      return completeOAuthFromParams({
-        access_token: access,
-        refresh_token: refresh,
-        error,
-      });
+      const { code, error } = extractCallback(result.url);
+      return completeOAuthFromParams({ code, error });
     }
     return { ok: false, cancelled: false, error: "Connexion OAuth interrompue." };
   } catch (e) {
@@ -135,7 +151,7 @@ async function startNativeApple(intent: OAuthIntent): Promise<OAuthResult> {
       payload.user = userPayload;
     }
 
-    const res = await fetch(`${AppConfig.API_BASE}/api/v1/auth/oauth/apple/native`, {
+    const res = await fetchWithTimeout(`${AppConfig.API_BASE}/api/v1/auth/oauth/apple/native`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
