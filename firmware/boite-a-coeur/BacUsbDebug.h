@@ -7,6 +7,8 @@
 #include <WiFi.h>
 #include <esp_heap_caps.h>
 #include <esp_ota_ops.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 #include "BacApp.h"
 #include "BacAssetsOta.h"
 #include "BacDebug.h"
@@ -107,6 +109,102 @@ private:
         return s;
     }
 
+    struct AssetsInstallJob {
+        BacApp *app = nullptr;
+        uint8_t *packBuf = nullptr;
+        uint32_t packSize = 0;
+        char packSha[65] = {};
+        char version[32] = {};
+        uint8_t *manifestBuf = nullptr;
+        uint32_t manifestSize = 0;
+        bool manifestReady = false;
+    };
+
+    static AssetsInstallJob &installJob() {
+        static AssetsInstallJob j;
+        return j;
+    }
+
+    static TaskHandle_t &installTask() {
+        static TaskHandle_t t = nullptr;
+        return t;
+    }
+
+    static void freeInstallJobBuffers() {
+        AssetsInstallJob &job = installJob();
+        if (job.packBuf) {
+            heap_caps_free(job.packBuf);
+            job.packBuf = nullptr;
+        }
+        if (job.manifestBuf) {
+            heap_caps_free(job.manifestBuf);
+            job.manifestBuf = nullptr;
+        }
+    }
+
+    static void clearInstallJob() {
+        freeInstallJobBuffers();
+        memset(&installJob(), 0, sizeof(AssetsInstallJob));
+        installTask() = nullptr;
+    }
+
+    static void assetsInstallTaskEntry(void *param) {
+        (void)param;
+        AssetsInstallJob &job = installJob();
+        BacApp *app = job.app;
+        BacWatchdog::subscribe();
+        BacWatchdog::feed();
+        assetsInstallLastPct() = 0;
+        assetsProgressThunk(app, 0);
+
+        bool shaFail = false;
+        const uint8_t *manifestData = (job.manifestReady && job.manifestBuf) ? job.manifestBuf : nullptr;
+        uint32_t manifestSize = job.manifestReady ? job.manifestSize : 0;
+        const char *version = job.version[0] ? job.version : nullptr;
+        bool ok = BacAssetsOta::installPackFromBuffer(job.packBuf, job.packSize, job.packSha, &assetsProgressThunk, app,
+                                                      &shaFail, version, manifestData, manifestSize, true);
+
+        freeInstallJobBuffers();
+        installTask() = nullptr;
+
+        if (!app) {
+            BacWatchdog::unsubscribe();
+            vTaskDelete(nullptr);
+            return;
+        }
+
+        if (!ok) {
+            if (!lucarne::volumeMounted()) lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
+            replyErr(shaFail ? "assets sha mismatch" : "assets install failed");
+            app->leaveUsbService();
+            BacWatchdog::unsubscribe();
+            vTaskDelete(nullptr);
+            return;
+        }
+
+        replyOk("assets_complete");
+        Serial.flush();
+        app->leaveUsbService();
+        app->setUsbFlashProgress(100, 100);
+        delay(50);
+        if (!lucarne::volumeMounted()) lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
+        BacWatchdog::unsubscribe();
+        vTaskDelete(nullptr);
+    }
+
+    static bool startAssetsInstallTask(BacApp &app) {
+        if (installTask() != nullptr) return false;
+        AssetsInstallJob &job = installJob();
+        job.app = &app;
+        BaseType_t created =
+            xTaskCreatePinnedToCore(assetsInstallTaskEntry, "bacUsbAst", 20480, nullptr, 2, &installTask(), 1);
+        if (created != pdPASS) {
+            clearInstallJob();
+            return false;
+        }
+        return true;
+    }
+
     static void resetSession(BacApp &app) {
         if (session().active) app.leaveUsbService();
         FlashSession &f = session();
@@ -124,8 +222,8 @@ private:
         }
     }
 
-    static void resetAssetsSession(BacApp &app) {
-        if (assetsSession().packActive) app.leaveUsbService();
+    static void resetAssetsSession(BacApp &app, bool leaveService = true) {
+        if (leaveService && assetsSession().packActive) app.leaveUsbService();
         AssetsSession &as = assetsSession();
         freeAssetsSession(as);
         memset(&as, 0, sizeof(as));
@@ -160,7 +258,11 @@ private:
     }
 
     static void replyPing(BacApp &app) {
-        app.enterUsbService(false);
+        if (installTask() != nullptr || session().active || assetsSession().packActive) {
+            app.enterUsbService(true);
+        } else {
+            app.enterUsbService(false);
+        }
         const BacUserConfig &c = app.userConfig();
         Serial.print(F("@BAC OK PONG model=BAC-XS3 fw="));
         Serial.print(BAC_FW_VERSION);
@@ -181,14 +283,16 @@ private:
     }
 
     static bool canFlash(BacApp &app) {
-        if (app.isOtaBusy()) return false;
+        if (app.isCloudOtaBusy()) return false;
+        if (installTask() != nullptr) return false;
         if (session().active || assetsSession().packActive || assetsSession().manifestBuf) return false;
         return true;
     }
 
     static bool canAssets(BacApp &app) {
-        if (app.isOtaBusy()) return false;
+        if (app.isCloudOtaBusy()) return false;
         if (session().active) return false;
+        if (installTask() != nullptr) return false;
         return true;
     }
 
@@ -217,7 +321,7 @@ private:
         check("ffat", lucarne::volumeMounted(), lucarne::volumeMounted() ? "mounted" : "unmounted");
         check("assets", BacAssetsOta::markerPresent(), BacAssetsOta::markerPresent() ? "installed" : "missing");
         check("mode_idle", app.isIdleForService(), app.modeName());
-        check("ota_busy", !app.isOtaBusy(), app.isOtaBusy() ? "busy" : "idle");
+        check("ota_busy", !app.isCloudOtaBusy(), app.isCloudOtaBusy() ? "busy" : "idle");
 
         const esp_partition_t *running = esp_ota_get_running_partition();
         const esp_partition_t *next = esp_ota_get_next_update_partition(running);
@@ -284,12 +388,28 @@ private:
         return true;
     }
 
+    static int &assetsInstallLastPct() {
+        static int v = 0;
+        return v;
+    }
+
     static void assetsProgressThunk(void *ctx, int pct) {
         BacApp *app = (BacApp *)ctx;
         if (!app) return;
-        app->setUsbFlashProgress((uint32_t)pct, 100);
+        int &lastPct = assetsInstallLastPct();
+        int out = pct;
+        if (pct <= 9) {
+            if (pct > lastPct) lastPct = pct;
+            out = lastPct;
+        } else {
+            out = 10 + (pct * 90) / 100;
+            if (out < lastPct) out = lastPct;
+            lastPct = out;
+        }
+        app->setUsbFlashProgress((uint32_t)out, 100);
         Serial.print(F("@BAC INFO assets_progress pct="));
-        Serial.println(pct);
+        Serial.println(out);
+        if (out == 0 || (out % 2) == 0) Serial.flush();
     }
 
     static void handleFlashBegin(BacApp &app, String args) {
@@ -644,12 +764,20 @@ private:
     }
 
     static void handleAssetsAbort(BacApp &app) {
+        if (installTask() != nullptr) {
+            replyErr("assets install busy");
+            return;
+        }
         resetAssetsSession(app);
         replyOk("assets_aborted");
     }
 
     static void handleAssetsEnd(BacApp &app) {
         AssetsSession &as = assetsSession();
+        if (installTask() != nullptr) {
+            replyErr("assets install busy");
+            return;
+        }
         if (!as.packActive || !as.packBuf) {
             replyErr("no assets session");
             return;
@@ -666,28 +794,35 @@ private:
             return;
         }
 
+        AssetsInstallJob &job = installJob();
+        job.app = &app;
+        job.packBuf = as.packBuf;
+        job.packSize = as.packExpected;
+        memcpy(job.packSha, as.packSha, sizeof(job.packSha));
+        memcpy(job.version, as.version, sizeof(job.version));
+        job.manifestBuf = as.manifestBuf;
+        job.manifestSize = as.manifestExpected;
+        job.manifestReady = as.manifestReady;
+
+        as.packBuf = nullptr;
+        as.manifestBuf = nullptr;
+        as.packActive = false;
+        as.manifestReady = false;
+        as.manifestExpected = 0;
+        as.manifestReceived = 0;
+        as.packExpected = 0;
+        as.packReceived = 0;
+        memset(as.packSha, 0, sizeof(as.packSha));
+        memset(as.version, 0, sizeof(as.version));
+        as.packShaCtx = BacSha256{};
+
         Serial.println(F("@BAC INFO assets_install"));
-        BacWatchdog::unsubscribe();
-        BacWatchdog::feed();
-        bool shaFail = false;
-        const uint8_t *manifestData = (as.manifestReady && as.manifestBuf) ? as.manifestBuf : nullptr;
-        uint32_t manifestSize = (as.manifestReady && as.manifestBuf) ? as.manifestExpected : 0;
-        const char *version = as.version[0] ? as.version : nullptr;
-        bool ok = BacAssetsOta::installPackFromBuffer(as.packBuf, as.packExpected, as.packSha, &assetsProgressThunk,
-                                                      &app, &shaFail, version, manifestData, manifestSize, true);
-        BacWatchdog::subscribe();
-        resetAssetsSession(app);
-        if (!ok) {
-            if (!lucarne::volumeMounted()) lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
-            replyErr(shaFail ? "assets sha mismatch" : "assets install failed");
-            return;
-        }
-        replyOk("assets_complete");
         Serial.flush();
-        app.leaveUsbService();
-        app.setUsbFlashProgress(100, 100);
-        delay(50);
-        if (!lucarne::volumeMounted()) lucarne::mountVolume(lucarne::VolumeFsKind::Fat, "ffat");
+        if (!startAssetsInstallTask(app)) {
+            clearInstallJob();
+            app.leaveUsbService();
+            replyErr("assets install failed");
+        }
     }
 };
 
