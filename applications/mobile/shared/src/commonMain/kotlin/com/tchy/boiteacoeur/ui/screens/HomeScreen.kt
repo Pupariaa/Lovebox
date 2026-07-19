@@ -50,7 +50,7 @@ fun HomeScreen(
     var visible by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { visible = true }
 
-    val hasDevice = vm.myDevice != null
+    val device = vm.myDevice
     val hasContacts = vm.linkedTargets.isNotEmpty()
     val greeting = vm.userProfile?.firstName?.trim()?.takeIf { it.isNotEmpty() } ?: "Bienvenue"
 
@@ -81,10 +81,9 @@ fun HomeScreen(
                 }
             }
 
-            if (!hasDevice) {
+            if (device == null) {
                 OnboardingCard(onBle = { requestBlePermissions() })
             } else {
-                val device = vm.myDevice!!
                 Surface(
                     modifier = Modifier.fillMaxWidth(),
                     shape = MaterialTheme.shapes.large,
@@ -161,7 +160,7 @@ fun HomeScreen(
 
             Spacer(Modifier.weight(1f))
 
-            if (vm.loading) {
+            if (vm.refreshing) {
                 CircularProgressIndicator(
                     modifier = Modifier.align(Alignment.CenterHorizontally),
                     color = RosePrimary,
