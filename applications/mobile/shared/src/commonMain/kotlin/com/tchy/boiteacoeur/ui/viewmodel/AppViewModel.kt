@@ -19,8 +19,11 @@ import com.tchy.boiteacoeur.data.storage.TokenStorage
 import com.tchy.boiteacoeur.domain.bacm.BacMessagePack
 import com.tchy.boiteacoeur.domain.bacm.EmojiFrameLoader
 import com.tchy.boiteacoeur.domain.bacm.SceneRasterizer
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -30,14 +33,29 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class AppViewModel {
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        if (throwable !is CancellationException) {
+            showMessage(userMessage(throwable))
+        }
+    }
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main + exceptionHandler)
     private val tokens = TokenStorage()
     private val api = ApiClient(tokens)
     private val ble = BleProvisioner()
     private val rasterizer = SceneRasterizer()
 
     var isLoggedIn by mutableStateOf(false)
-    var loading by mutableStateOf(false)
+
+    var authLoading by mutableStateOf(false)
+    var refreshing by mutableStateOf(false)
+    var bleScanning by mutableStateOf(false)
+    var bleProvisioning by mutableStateOf(false)
+    var pairingLoading by mutableStateOf(false)
+    var sendingMessage by mutableStateOf(false)
+    var historyLoading by mutableStateOf(false)
+    var deviceUpdating by mutableStateOf(false)
+    var unclaiming by mutableStateOf(false)
+    var profileUpdating by mutableStateOf(false)
 
     private val _snackbarMessage = MutableStateFlow<String?>(null)
     val snackbarMessage: StateFlow<String?> = _snackbarMessage.asStateFlow()
@@ -62,14 +80,14 @@ class AppViewModel {
     var bleProvisionSerialNumber by mutableStateOf<String?>(null)
     var bleProvisionUuid by mutableStateOf<String?>(null)
     var bleWifiProvisioned by mutableStateOf(false)
-    var claimUuid by mutableStateOf("")
-    var claimSerialNumber by mutableStateOf("")
 
     var composerScene by mutableStateOf(BacMessagePack.createDefaultScene())
     var scheduledSendAt by mutableStateOf("")
     var history by mutableStateOf<List<SentMessageDto>>(emptyList())
 
     var forceAuth by mutableStateOf(false)
+
+    private var provisionJob: Job? = null
 
     fun clearSnackbar() {
         _snackbarMessage.value = null
@@ -102,6 +120,26 @@ class AppViewModel {
     private fun userMessage(error: Throwable): String =
         if (error is ApiException) error.message ?: "Erreur réseau"
         else mapApiError(error.message ?: "Erreur réseau")
+
+    private suspend fun <T> ioCatching(block: suspend () -> T): Result<T> =
+        withContext(Dispatchers.IO) {
+            try {
+                Result.success(block())
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                Result.failure(error)
+            }
+        }
+
+    private suspend fun safeDisconnect() {
+        try {
+            ble.disconnect()
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (_: Throwable) {
+        }
+    }
 
     suspend fun bootstrap(): Boolean {
         if (tokens.getAccessToken() == null) {
@@ -154,7 +192,7 @@ class AppViewModel {
 
     fun login(email: String, password: String, onSuccess: () -> Unit) {
         scope.launch {
-            loading = true
+            authLoading = true
             runCatching { api.login(email, password) }
                 .onSuccess {
                     isLoggedIn = true
@@ -163,13 +201,13 @@ class AppViewModel {
                     onSuccess()
                 }
                 .onFailure { showMessage(userMessage(it)) }
-            loading = false
+            authLoading = false
         }
     }
 
     fun register(email: String, password: String, onSuccess: () -> Unit) {
         scope.launch {
-            loading = true
+            authLoading = true
             runCatching { api.register(email, password) }
                 .onSuccess {
                     isLoggedIn = true
@@ -178,7 +216,7 @@ class AppViewModel {
                     onSuccess()
                 }
                 .onFailure { showMessage(userMessage(it)) }
-            loading = false
+            authLoading = false
         }
     }
 
@@ -192,7 +230,7 @@ class AppViewModel {
 
     fun refreshState() {
         scope.launch {
-            loading = true
+            refreshing = true
             runCatching { loadRemoteState() }
                 .onFailure { error ->
                     if (error is ApiException && error.status == 401) {
@@ -201,16 +239,16 @@ class AppViewModel {
                         showMessage(userMessage(error))
                     }
                 }
-            loading = false
+            refreshing = false
         }
     }
 
     fun scanBle() {
         scope.launch {
-            loading = true
+            bleScanning = true
             runCatching { bleDevices = ble.scan() }
                 .onFailure { showMessage(userMessage(it)) }
-            loading = false
+            bleScanning = false
         }
     }
 
@@ -222,6 +260,23 @@ class AppViewModel {
         bleProvisionUuid = null
     }
 
+    fun cancelBleProvisioning() {
+        val job = provisionJob
+        provisionJob = null
+        job?.cancel()
+        bleProvisioning = false
+        bleWifiProvisioned = false
+        bleProvisionPhase = BleProvisionPhase.Idle
+        bleProvisionError = null
+        scope.launch(Dispatchers.IO) {
+            try {
+                ble.disconnect()
+            } catch (_: Throwable) {
+            }
+        }
+        showMessage("Configuration annulée")
+    }
+
     fun provisionBle(
         address: String,
         deviceName: String,
@@ -229,88 +284,88 @@ class AppViewModel {
         password: String,
         onFinished: (success: Boolean) -> Unit,
     ) {
-        scope.launch {
-            loading = true
-            bleProvisionError = null
-            bleWifiProvisioned = false
-            bleProvisionDeviceName = deviceName
-            bleProvisionPhase = BleProvisionPhase.Connecting
+        provisionJob = scope.launch {
+            bleProvisioning = true
+            try {
+                bleProvisionError = null
+                bleWifiProvisioned = false
+                bleProvisionDeviceName = deviceName
+                bleProvisionPhase = BleProvisionPhase.Connecting
 
-            val connectResult = withContext(Dispatchers.IO) {
-                runCatching { ble.connect(address, deviceName) }
-            }
-            if (connectResult.isFailure) {
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = bleConnectError(connectResult.exceptionOrNull()!!)
-                runCatching { ble.disconnect() }
-                onFinished(false)
-                loading = false
-                return@launch
-            }
+                val connectResult = ioCatching { ble.connect(address, deviceName) }
+                if (connectResult.isFailure) {
+                    val error = connectResult.exceptionOrNull()
+                        ?: IllegalStateException("Connexion Bluetooth impossible")
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = bleConnectError(error)
+                    safeDisconnect()
+                    onFinished(false)
+                    return@launch
+                }
 
-            val identity = withContext(Dispatchers.IO) { ble.boxIdentity() }
-            val resolvedName = identity?.deviceName?.trim().orEmpty().ifBlank { deviceName.trim() }
-            if (resolvedName.isBlank() || resolvedName.equals("BoiteACoeur", ignoreCase = true)) {
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = "Impossible de lire l'identité de la boîte. Reflashe le firmware et réessaie."
-                runCatching { ble.disconnect() }
-                onFinished(false)
-                loading = false
-                return@launch
-            }
-            bleProvisionDeviceName = resolvedName
-            bleProvisionSerialNumber = identity?.serialNumber?.trim()?.takeIf { it.isNotBlank() }
-            bleProvisionUuid = identity?.uuid?.trim()?.takeIf { it.isNotBlank() }
+                val identity = withContext(Dispatchers.IO) { ble.boxIdentity() }
+                val resolvedName = identity?.deviceName?.trim().orEmpty().ifBlank { deviceName.trim() }
+                if (resolvedName.isBlank() || resolvedName.equals("BoiteACoeur", ignoreCase = true)) {
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = "Impossible de lire l'identité de la boîte. Reflashe le firmware et réessaie."
+                    safeDisconnect()
+                    onFinished(false)
+                    return@launch
+                }
+                bleProvisionDeviceName = resolvedName
+                bleProvisionSerialNumber = identity?.serialNumber?.trim()?.takeIf { it.isNotBlank() }
+                bleProvisionUuid = identity?.uuid?.trim()?.takeIf { it.isNotBlank() }
 
-            bleProvisionPhase = BleProvisionPhase.SendingWifi
-            val sendResult = withContext(Dispatchers.IO) {
-                runCatching { ble.sendWifiCredentials(ssid, password) }
-            }
-            if (sendResult.isFailure) {
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = userMessage(sendResult.exceptionOrNull()!!)
-                runCatching { ble.disconnect() }
-                onFinished(false)
-                loading = false
-                return@launch
-            }
+                bleProvisionPhase = BleProvisionPhase.SendingWifi
+                val sendResult = ioCatching { ble.sendWifiCredentials(ssid, password) }
+                if (sendResult.isFailure) {
+                    val error = sendResult.exceptionOrNull()
+                        ?: IllegalStateException("Envoi des identifiants WiFi impossible")
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = userMessage(error)
+                    safeDisconnect()
+                    onFinished(false)
+                    return@launch
+                }
 
-            bleProvisionPhase = BleProvisionPhase.WaitingForBox
-            val wifiOkResult = withContext(Dispatchers.IO) {
-                runCatching { ble.awaitWifiResult() }
-            }
-            if (wifiOkResult.isFailure) {
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = userMessage(wifiOkResult.exceptionOrNull()!!)
-                onFinished(false)
-                loading = false
-                return@launch
-            }
-            if (wifiOkResult.getOrDefault(false) != true) {
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = "La boîte n'a pas pu se connecter au WiFi. Vérifie que le réseau est en 2,4 GHz et que le mot de passe est correct."
-                runCatching { ble.disconnect() }
-                onFinished(false)
-                loading = false
-                return@launch
-            }
+                bleProvisionPhase = BleProvisionPhase.WaitingForBox
+                val wifiOkResult = ioCatching { ble.awaitWifiResult() }
+                if (wifiOkResult.isFailure) {
+                    val error = wifiOkResult.exceptionOrNull()
+                        ?: IllegalStateException("La boîte n'a pas répondu")
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = userMessage(error)
+                    onFinished(false)
+                    return@launch
+                }
+                if (wifiOkResult.getOrDefault(false) != true) {
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = "La boîte n'a pas pu se connecter au WiFi. Vérifie que le réseau est en 2,4 GHz et que le mot de passe est correct."
+                    safeDisconnect()
+                    onFinished(false)
+                    return@launch
+                }
 
-            bleWifiProvisioned = true
-            bleProvisionPhase = BleProvisionPhase.LinkingAccount
-            runCatching {
-                claimDeviceWhenOnline(
-                    uuid = bleProvisionUuid.orEmpty(),
-                    serialNumber = bleProvisionSerialNumber.orEmpty(),
-                )
-                loadRemoteState()
-                bleProvisionPhase = BleProvisionPhase.Success
-                onFinished(true)
-            }.onFailure { error ->
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = userMessage(error)
-                onFinished(false)
+                bleWifiProvisioned = true
+                bleProvisionPhase = BleProvisionPhase.LinkingAccount
+                runCatching {
+                    claimDeviceWhenOnline(
+                        uuid = bleProvisionUuid.orEmpty(),
+                        serialNumber = bleProvisionSerialNumber.orEmpty(),
+                    )
+                    loadRemoteState()
+                    bleProvisionPhase = BleProvisionPhase.Success
+                    onFinished(true)
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = userMessage(error)
+                    onFinished(false)
+                }
+            } finally {
+                bleProvisioning = false
+                provisionJob = null
             }
-            loading = false
         }
     }
 
@@ -328,6 +383,7 @@ class AppViewModel {
                 api.claimDevice(uuid, serialNumber)
                 return
             }.onFailure { error ->
+                if (error is CancellationException) throw error
                 if (isClaimRetryable(error) && attempt < CLAIM_RETRY_COUNT - 1) {
                     delay(CLAIM_RETRY_DELAY_MS)
                 } else {
@@ -372,46 +428,38 @@ class AppViewModel {
             onFinished(false)
             return
         }
-        scope.launch {
-            loading = true
-            bleProvisionError = null
-            bleProvisionPhase = BleProvisionPhase.LinkingAccount
-            runCatching {
-                claimDeviceWhenOnline(uuid, serial)
-                loadRemoteState()
-                bleProvisionPhase = BleProvisionPhase.Success
-                onFinished(true)
-            }.onFailure { error ->
-                bleProvisionPhase = BleProvisionPhase.Failed
-                bleProvisionError = userMessage(error)
-                onFinished(false)
+        provisionJob = scope.launch {
+            bleProvisioning = true
+            try {
+                bleProvisionError = null
+                bleProvisionPhase = BleProvisionPhase.LinkingAccount
+                runCatching {
+                    claimDeviceWhenOnline(uuid, serial)
+                    loadRemoteState()
+                    bleProvisionPhase = BleProvisionPhase.Success
+                    onFinished(true)
+                }.onFailure { error ->
+                    if (error is CancellationException) throw error
+                    bleProvisionPhase = BleProvisionPhase.Failed
+                    bleProvisionError = userMessage(error)
+                    onFinished(false)
+                }
+            } finally {
+                bleProvisioning = false
+                provisionJob = null
             }
-            loading = false
-        }
-    }
-
-    fun claimDevice(onDone: () -> Unit) {
-        scope.launch {
-            loading = true
-            runCatching {
-                api.claimDevice(claimUuid.trim(), claimSerialNumber.trim())
-                loadRemoteState()
-                showMessage("Boîte liée au compte")
-                onDone()
-            }.onFailure { showMessage(userMessage(it)) }
-            loading = false
         }
     }
 
     fun generatePairingCode() {
         scope.launch {
-            loading = true
+            pairingLoading = true
             pairingCodeCopied = false
             runCatching {
                 val deviceId = if (devices.size > 1) selectedDeviceId.takeIf { it > 0 } else null
                 pairingCode = api.generatePairingCode(deviceId).code
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            pairingLoading = false
         }
     }
 
@@ -422,39 +470,39 @@ class AppViewModel {
 
     fun acceptPairingCode(code: String) {
         scope.launch {
-            loading = true
+            pairingLoading = true
             runCatching {
                 val deviceId = if (devices.size > 1) selectedDeviceId.takeIf { it > 0 } else null
                 api.acceptPairingCode(code, deviceId)
                 loadRemoteState()
                 showMessage("Contact lié")
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            pairingLoading = false
         }
     }
 
     fun unlinkTarget(pairingId: Long) {
         scope.launch {
-            loading = true
+            pairingLoading = true
             runCatching {
                 api.unlinkPairing(pairingId)
                 loadRemoteState()
                 showMessage("Contact retiré")
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            pairingLoading = false
         }
     }
 
     fun unclaimDevice(deviceId: Long, onDone: () -> Unit) {
         scope.launch {
-            loading = true
+            unclaiming = true
             runCatching {
                 api.unclaimDevice(deviceId)
                 loadRemoteState()
                 showMessage("Boîte dissociée")
                 onDone()
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            unclaiming = false
         }
     }
 
@@ -464,7 +512,7 @@ class AppViewModel {
             return
         }
         scope.launch {
-            loading = true
+            sendingMessage = true
             runCatching {
                 val bacm = BacMessagePack.buildFromScene(composerScene, rasterizer) { ref, size ->
                     EmojiFrameLoader.loadFrames(ref, size)
@@ -474,24 +522,24 @@ class AppViewModel {
                 showMessage("Message envoyé")
                 onSent()
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            sendingMessage = false
         }
     }
 
     fun loadHistory() {
         scope.launch {
-            loading = true
+            historyLoading = true
             runCatching {
                 history = api.listSentMessages().items
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            historyLoading = false
         }
     }
 
     fun updateDeviceSettings(displayName: String, regionOverride: String) {
         val deviceId = selectedDeviceId.takeIf { it > 0 } ?: myDevice?.id ?: return
         scope.launch {
-            loading = true
+            deviceUpdating = true
             runCatching {
                 val response = api.updateDevice(
                     deviceId = deviceId,
@@ -505,7 +553,7 @@ class AppViewModel {
                 pushDeviceConfigViaBle(displayName.trim(), regionOverride.trim())
                 showMessage("Réglages enregistrés")
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            deviceUpdating = false
         }
     }
 
@@ -542,13 +590,13 @@ class AppViewModel {
         onDone: () -> Unit = {},
     ) {
         scope.launch {
-            loading = true
+            profileUpdating = true
             runCatching {
                 userProfile = api.updateUserProfile(firstName, lastName, locale, password)
                 showMessage("Profil mis à jour")
                 onDone()
             }.onFailure { showMessage(userMessage(it)) }
-            loading = false
+            profileUpdating = false
         }
     }
 }
