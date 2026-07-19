@@ -168,7 +168,7 @@ struct BacAssetsOta {
         removeLegacyStaging(FFat);
 
         if (keepLucarneUnmounted) {
-            if (!prefreeForUsbInstall(FFat)) {
+            if (!prefreeForUsbInstall(FFat, progress, ctx)) {
                 BacDebug::event("assets", "prefree failed");
                 if (FFat.exists(kManifestTmpPath)) FFat.remove(kManifestTmpPath);
                 FFat.end();
@@ -393,6 +393,7 @@ private:
                 BacDebug::eventf("assets", "install %lu/%lu", (unsigned long)(i + 1), (unsigned long)fileCount);
             }
             BacWatchdog::feed();
+            delay(1);
             uint8_t lenBytes[2];
             if (!readHashedBuf(reader, lenBytes, 2, sha)) {
                 BacDebug::eventf("assets", "read path len failed file %lu", (unsigned long)i);
@@ -457,6 +458,10 @@ private:
                 }
                 remaining -= (uint32_t)chunk;
                 consumed += chunk;
+                if ((consumed & 0x3FFF) == 0) {
+                    BacWatchdog::feed();
+                    delay(1);
+                }
                 if (progress && expectedSize > 0) {
                     int pct = (int)((consumed * 100ULL) / expectedSize);
                     if (pct > 100) pct = 100;
@@ -828,8 +833,16 @@ private:
         dir.close();
     }
 
-    static bool removeListedFiles(fs::FS &fs, const String &files) {
+    static bool removeListedFiles(fs::FS &fs, const String &files, ProgressFn progress = nullptr, void *ctx = nullptr,
+                                  int pctLo = -1, int pctHi = -1) {
         int start = 0;
+        int removed = 0;
+        int total = 0;
+        if (progress && pctLo >= 0 && pctHi > pctLo) {
+            for (int i = 0; i < (int)files.length(); i++) {
+                if (files.charAt(i) == '\n') total++;
+            }
+        }
         while (start < (int)files.length()) {
             BacWatchdog::feed();
             int nl = files.indexOf('\n', start);
@@ -840,6 +853,13 @@ private:
             if (!fs.remove(p.c_str())) {
                 BacDebug::eventf("assets", "rm fail %s", p.c_str());
                 return false;
+            }
+            removed++;
+            if ((removed & 0x3F) == 0) delay(1);
+            if (progress && total > 0 && pctHi > pctLo && (removed & 0xF) == 0) {
+                int pct = pctLo + ((pctHi - pctLo) * removed) / total;
+                if (pct > pctHi) pct = pctHi;
+                progress(ctx, pct);
             }
         }
         return true;
@@ -863,7 +883,8 @@ private:
         }
     }
 
-    static bool removeTree(fs::FS &fs, const char *root) {
+    static bool removeTree(fs::FS &fs, const char *root, ProgressFn progress = nullptr, void *ctx = nullptr,
+                           int pctLo = -1, int pctHi = -1) {
         if (!fs.exists(root)) return true;
         File dir = fs.open(root);
         if (!dir) return false;
@@ -875,7 +896,7 @@ private:
         String files;
         String dirs;
         listTree(fs, root, files, dirs);
-        if (!removeListedFiles(fs, files)) return false;
+        if (!removeListedFiles(fs, files, progress, ctx, pctLo, pctHi)) return false;
         removeListedDirs(fs, dirs);
         return fs.rmdir(root);
     }
@@ -898,16 +919,19 @@ private:
         return true;
     }
 
-    static bool prefreeForUsbInstall(fs::FS &fs) {
+    static bool prefreeForUsbInstall(fs::FS &fs, ProgressFn progress = nullptr, void *ctx = nullptr) {
         BacDebug::event("assets", "prefree usb wipe");
+        if (progress) progress(ctx, 0);
         if (fs.exists(kMarkerPath)) fs.remove(kMarkerPath);
         if (fs.exists(kManifestPath)) fs.remove(kManifestPath);
         if (fs.exists(kManifestTmpPath)) fs.remove(kManifestTmpPath);
         removeTree(fs, kStagingDir);
         removeTree(fs, kBackupDir);
         if (fs.exists(kAssetsDir)) {
-            if (!removeTree(fs, kAssetsDir)) return false;
+            if (progress) progress(ctx, 1);
+            if (!removeTree(fs, kAssetsDir, progress, ctx, 1, 9)) return false;
         }
+        if (progress) progress(ctx, 9);
         return true;
     }
 
