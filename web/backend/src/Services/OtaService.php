@@ -130,15 +130,39 @@ final class OtaService
         }
         return [
             'id' => $id,
-            'serial_number' => $device['serial_number'],
-            'uuid' => $device['uuid'],
-            'device_name' => $device['device_name'],
+            'serial_masked' => self::maskSerial((string) ($device['serial_number'] ?? '')),
             'firmware_version' => $device['firmware_version'],
             'claimed' => $device['owner_user_id'] !== null,
-            'last_seen_at' => $lastSeen,
             'online' => $online,
             'has_open_ota_command' => $this->commands->hasOpenType($id, 'ota'),
         ];
+    }
+
+    private static function maskSerial(string $serial): string
+    {
+        $serial = trim($serial);
+        if ($serial === '') {
+            return '';
+        }
+        $len = strlen($serial);
+        if ($len <= 4) {
+            return str_repeat('*', $len);
+        }
+        return str_repeat('*', $len - 4) . substr($serial, -4);
+    }
+
+    private function assertBinariesOnDisk(array $release): void
+    {
+        $dir = $this->versionDir((string) $release['version']);
+        $firmwareFile = (string) ($release['firmware_file'] ?? '');
+        if ($firmwareFile === '' || !is_file($dir . DIRECTORY_SEPARATOR . $firmwareFile)) {
+            throw new \InvalidArgumentException('firmware binary missing on disk');
+        }
+        if (!empty($release['assets_file'])) {
+            if (!is_file($dir . DIRECTORY_SEPARATOR . (string) $release['assets_file'])) {
+                throw new \InvalidArgumentException('assets pack missing on disk');
+            }
+        }
     }
 
     public function notifyDevice(array $identifiers, ?int $releaseId = null, bool $force = false): array
@@ -171,6 +195,15 @@ final class OtaService
             throw new \InvalidArgumentException('no published release');
         }
         $current = isset($device['firmware_version']) ? (string) $device['firmware_version'] : '';
+        if (!empty($release['min_version']) && $current !== '') {
+            if (version_compare($current, (string) $release['min_version'], '<')) {
+                return [
+                    'enqueued' => false,
+                    'reason' => 'below min_version',
+                    'device_id' => $deviceId,
+                ];
+            }
+        }
         if (!$force) {
             if ($current !== '' && !self::isNewer((string) $release['version'], $current)) {
                 return [
@@ -178,15 +211,6 @@ final class OtaService
                     'reason' => 'already up to date',
                     'device_id' => $deviceId,
                 ];
-            }
-            if (!empty($release['min_version']) && $current !== '') {
-                if (version_compare($current, (string) $release['min_version'], '<')) {
-                    return [
-                        'enqueued' => false,
-                        'reason' => 'below min_version',
-                        'device_id' => $deviceId,
-                    ];
-                }
             }
         }
         if ($force) {
@@ -222,6 +246,7 @@ final class OtaService
         if (!$release) {
             throw new \InvalidArgumentException('release not found');
         }
+        $this->assertBinariesOnDisk($release);
         if (!$this->releases->publish($releaseId)) {
             throw new \InvalidArgumentException('publish failed');
         }
