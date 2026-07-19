@@ -3,7 +3,7 @@ import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AppText, Button, Card, Screen, StatusPill, TextField } from "@/components/ui";
-import { useAppStore } from "@/store/appStore";
+import { useAppStore, useLoading } from "@/store/appStore";
 import { copyToClipboard } from "@/util/platform";
 import { colors, radius, spacing } from "@/theme/theme";
 import { formatLastSeen, targetLabel } from "@/util/formatters";
@@ -21,7 +21,7 @@ function formatPairingCodeInput(raw: string): string {
 }
 
 export default function ContactsScreen() {
-  const loading = useAppStore((s) => s.loading);
+  const loading = useLoading("pairing");
   const pairingCode = useAppStore((s) => s.pairingCode);
   const pairingCodeCopied = useAppStore((s) => s.pairingCodeCopied);
   const linkedTargets = useAppStore((s) => s.linkedTargets);
