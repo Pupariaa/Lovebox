@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { Linking, useCallback } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -9,21 +9,24 @@ import {
   NavMenuItem,
   Screen,
 } from "@/components/ui";
+import { AppConfig } from "@/config/AppConfig";
 import { useAppStore } from "@/store/appStore";
 import { colors, radius, spacing } from "@/theme/theme";
 
 export default function AccountScreen() {
   const router = useRouter();
   const userProfile = useAppStore((s) => s.userProfile);
-  const myDevice = useAppStore((s) => s.myDevice);
+  const devices = useAppStore((s) => s.devices);
   const history = useAppStore((s) => s.history);
   const logout = useAppStore((s) => s.logout);
   const loadUserProfile = useAppStore((s) => s.loadUserProfile);
+  const refreshState = useAppStore((s) => s.refreshState);
 
   useFocusEffect(
     useCallback(() => {
       void loadUserProfile();
-    }, [loadUserProfile]),
+      void refreshState();
+    }, [loadUserProfile, refreshState]),
   );
 
   const name =
@@ -34,6 +37,13 @@ export default function AccountScreen() {
     await logout();
     router.replace("/auth");
   };
+
+  const boxesSubtitle =
+    devices.length === 0
+      ? "Aucune boîte liée."
+      : devices.length === 1
+        ? "1 boîte liée."
+        : `${devices.length} boîtes liées.`;
 
   return (
     <Screen title="Compte">
@@ -55,24 +65,16 @@ export default function AccountScreen() {
         <NavMenuGroup>
           <NavMenuItem
             title="Mon profil"
-            subtitle="Nom, langue, mot de passe"
+            subtitle="Nom, langue, mot de passe."
             icon="person-circle"
             onPress={() => router.push("/profile")}
           />
           <NavMenuItem
-            title="Réglages de la boîte"
-            subtitle="Nom affiché, région"
-            icon="settings"
-            onPress={() => router.push("/settings")}
+            title="Mes boîtes"
+            subtitle={boxesSubtitle}
+            icon="cube"
+            onPress={() => router.push("/boxes")}
           />
-          {myDevice ? (
-            <NavMenuItem
-              title="Détails de la boîte"
-              subtitle="Série, firmware, statut"
-              icon="cube"
-              onPress={() => router.push(`/device/${myDevice.id}`)}
-            />
-          ) : null}
           <NavMenuItem
             title="Historique"
             subtitle={`${history.length} message${history.length > 1 ? "s" : ""}`}
@@ -80,10 +82,10 @@ export default function AccountScreen() {
             onPress={() => router.push("/history")}
           />
           <NavMenuItem
-            title="Configurer le WiFi"
-            subtitle="Reconnecter la boîte"
-            icon="bluetooth"
-            onPress={() => router.push("/ble")}
+            title="Messages reçus"
+            subtitle="Messages ouverts sur tes boîtes."
+            icon="mail-open"
+            onPress={() => router.push("/received")}
             last
           />
         </NavMenuGroup>
@@ -93,6 +95,12 @@ export default function AccountScreen() {
             title="Informations légales"
             icon="document-text"
             onPress={() => router.push("/legal-hub")}
+          />
+          <NavMenuItem
+            title="Supprimer mon compte"
+            subtitle="Demande de suppression RGPD."
+            icon="trash"
+            onPress={() => void Linking.openURL(`${AppConfig.API_BASE}/delete-me`)}
             last
           />
         </NavMenuGroup>
