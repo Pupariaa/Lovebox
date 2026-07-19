@@ -218,7 +218,8 @@ public:
         return _ui->current()->name();
     }
     bool isWifiLinked() const { return _wifi.connected(); }
-    bool isOtaBusy() const { return _otaRunning || _otaPending || _usbFlashActive; }
+    bool isCloudOtaBusy() const { return _otaRunning || _otaPending; }
+    bool isOtaBusy() const { return isCloudOtaBusy() || _usbServiceActive; }
     bool isIdleForService() const { return _mode == Mode::Idle && !_usbFlashActive; }
     bool isUsbFlashActive() const { return _usbFlashActive; }
     bool isUsbServiceActive() const { return _usbServiceActive; }
@@ -884,7 +885,7 @@ private:
     }
 
     bool canRunOta() const {
-        return _config.setupComplete() && _mode == Mode::Idle && !_usbFlashActive;
+        return _config.setupComplete() && _mode == Mode::Idle && !_usbServiceActive;
     }
 
     void queueOtaFromPayload(const String &payload, uint32_t commandId) {
