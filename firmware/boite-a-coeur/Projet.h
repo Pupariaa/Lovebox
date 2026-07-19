@@ -8,14 +8,14 @@
 #include "Projet_setup.h"
 #include "BacLocale.h"
 
+using namespace lucarne;
+
 // Menu actions — read in loop() with ui.pollMenuAction() (constants below)
 static const uint8_t ACTION_SETTINGS_DISCONNECT_CONFIRM = 1;
 
-inline uint8_t pollMenuAction(lucarne::UI &ui) { return ui.pollMenuAction(); }
+inline uint8_t pollMenuAction(UI &ui) { return ui.pollMenuAction(); }
 
 namespace projet {
-
-using namespace lucarne;
 
 // ---- Widgets ----
 Label w0(1, 12, "Connexion perdue", TextAlign::Left);
@@ -32,12 +32,12 @@ Label w10(0, 133, "Coeur", TextAlign::Left);
 Label w11(0, 79, "Bienvenue dans", TextAlign::Left);
 Label w12(0, 105, "votre boite à coeur !", TextAlign::Left);
 Icon w13(100, 144, "emoji:1f44b-1f3fb", 24);
-Label w14(0, 30, "Suivant", TextAlign::Left);
-Icon w15(124, 0, "glyphs:arrow-solid-bracket-start@w:w_mr2y83n1f", 1);
+Icon w14(124, 0, "glyphs:arrow-solid-bracket-start@w:w_mr2y83n1f", 1);
+Label w15(2, 29, "Suivant", TextAlign::Left);
 Image w16(0, 0, 280, 240, &Img_img_mqxqcdzu6);
 Label w17(0, 69, "Nouveau message", TextAlign::Left);
 Icon w18(76, 109, "emoji:1f48c", 4);
-Label w19(0, 22, "Ouvrir", TextAlign::Left);
+Label w19(0, 24, "Ouvrir", TextAlign::Left);
 Icon w20(124, 0, "glyphs:arrow-solid-bracket-start@w:w_mr2y5dupb", 1);
 Label w21(0, 50, "Téléchargez l'application", TextAlign::Left);
 Label w22(0, 74, "pour configurer votre boîte à coeur", TextAlign::Left);
@@ -57,10 +57,10 @@ Label w35(0, 23, "Impossible de se connecter à", TextAlign::Left);
 Label w36(0, 61, "SSID_name", TextAlign::Left);
 Label w37(0, 190, "Vérifiez vos paramètres", TextAlign::Left);
 Icon w38(107, 90, "emoji:1f614@w:w_mqzxkguj1c", 2);
-Label w39(0, 39, "Connexion au réseau wifi", TextAlign::Left);
-Label w40(0, 67, "SSID_name", TextAlign::Left);
-Label w41(0, 91, "en cours..", TextAlign::Left);
-Icon w42(103, 122, "emoji:1f42c@w:w_mqzxq5g01i", 24);
+Label w39(0, 25, "Connexion au réseau wifi", TextAlign::Left);
+Label w40(0, 53, "SSID_name", TextAlign::Left);
+Label w41(0, 74, "en cours..", TextAlign::Left);
+Icon w42(108, 113, "glyphs:spinner-2@w:w_mrbesk3hb", 1);
 Label w43(0, 93, "23:59", TextAlign::Left);
 Label w44(0, 201, "Pas de nouveau message", TextAlign::Left);
 Label w45(0, 34, "Envoyer un coeur", TextAlign::Left);
@@ -75,15 +75,15 @@ Menu w53(40, 141, 199, 61);
 Label w54(0, 29, "Souhaitez vous vraiment", TextAlign::Left);
 Label w55(0, 52, "déconnecter votre", TextAlign::Left);
 Label w56(0, 73, "Boîte à coeur d'internet ?", TextAlign::Left);
-Label w57(0, 27, "Déconnexion en cours...", TextAlign::Left);
-Icon w58(104, 88, "emoji:1f42c@w:w_mr17v20xe", 2);
+Label w57(0, 60, "Déconnexion en cours...", TextAlign::Left);
+Icon w58(109, 113, "glyphs:spinner-2@w:w_mrbeuqokd", 1);
 Label w59(0, 47, "La Boîte à coeur a été déconnectée", TextAlign::Left);
 Label w60(0, 106, "Pour utiliser la Boîte à coeur, ", TextAlign::Left);
 Label w61(0, 124, "Vous devez spécifier une", TextAlign::Left);
 Label w62(0, 142, "connexion internet.", TextAlign::Left);
 Menu w63(40, 189, 199, 35);
-Label w64(0, 25, "Test de la connexion en cours...", TextAlign::Left);
-Icon w65(104, 88, "emoji:1f42c@w:w_mr17ug4qc", 2);
+Label w64(0, 63, "Test de la connexion en cours...", TextAlign::Left);
+Icon w65(108, 114, "glyphs:spinner-2@w:w_mrbev68te", 1);
 Icon w66(96, 74, "emoji:1f389@w:w_mr16c6451w", 28);
 Label w67(0, 34, "Connexion parfaite !", TextAlign::Left);
 Menu w68(40, 189, 199, 35);
@@ -105,11 +105,12 @@ Label w83(0, 37, "Souhaitez vous vraiment", TextAlign::Left);
 Label w84(0, 60, "Réinitialiser la Boîte à coeur ?", TextAlign::Left);
 Label w85(0, 90, "Le prochain démarrage", TextAlign::Left);
 Label w86(0, 106, "Affichera le setup", TextAlign::Left);
-Icon w87(104, 88, "emoji:1f42c@w:w_mr176o9r3k", 2);
-Label w88(0, 27, "Réinitialisation en cours..", TextAlign::Left);
-Label w89(0, 206, "Ne pas débrancher", TextAlign::Left);
-Label w90(0, 98, "Mise à jour en cours..", TextAlign::Left);
-Label w91(0, 118, "Ne pas débrancher", TextAlign::Left);
+Label w87(0, 27, "Réinitialisation en cours..", TextAlign::Left);
+Label w88(0, 184, "Ne pas débrancher", TextAlign::Left);
+Bar w89(56, 104, 165, 35, "ota_pct", 0.0f, 100.0f);
+Label w90(0, 70, "Mise à jour en cours..", TextAlign::Left);
+Label w91(0, 96, "Ne pas débrancher", TextAlign::Left);
+Bar w92(56, 136, 165, 35, "ota_pct", 0.0f, 100.0f);
 
 // ---- Screens ----
 Screen screen_scr_mqwqhtj72("lost_connection");
@@ -134,7 +135,7 @@ Screen screen_scr_mr16b8yk1t("settings_wifi_success");
 Screen screen_scr_mr16dm621x("settings_wifi_error");
 Screen screen_scr_mr16kq912c("settings_informations");
 Screen screen_scr_mr171rmq2y("settings_factory_reset");
-Screen screen_scr_mr1760ww3i("settings_fatory_reseting");
+Screen screen_scr_mr1760ww3i("settings_factory_reseting");
 Screen screen_scr_mr3hcyofj("updating");
 
 inline Theme makeTheme() {
@@ -215,17 +216,17 @@ inline void build(UI &ui) {
     w12.setColor(color565(245, 112, 112));
     w12.setAlign(TextAlign::Center);
     w13.setBounds(100, 144, 77, 77);
-    w14.setBounds(0, 30, 278, 25);
-    w14.setFont(&LucarneFontBody);
-    w14.setColor(color565(255, 255, 255));
-    w14.setAlign(TextAlign::Center);
-    w15.setBounds(124, 0, 32, 32);
+    w14.setBounds(124, 0, 32, 32);
+    w15.setBounds(2, 29, 278, 25);
+    w15.setFont(&LucarneFontBody);
+    w15.setColor(color565(128, 128, 128));
+    w15.setAlign(TextAlign::Center);
     w17.setBounds(0, 69, 280, 32);
     w17.setFont(&Font_style_Up_DoItwithLove_mqzw28kc_39_w400);
     w17.setColor(color565(224, 144, 144));
     w17.setAlign(TextAlign::Center);
     w18.setBounds(76, 109, 128, 128);
-    w19.setBounds(0, 22, 280, 35);
+    w19.setBounds(0, 24, 280, 35);
     w19.setFont(&LucarneFontBody);
     w19.setColor(color565(181, 115, 115));
     w19.setSpacing(2);
@@ -275,16 +276,16 @@ inline void build(UI &ui) {
     w37.setFont(&LucarneFontBody);
     w37.setAlign(TextAlign::Center);
     w38.setBounds(107, 90, 64, 64);
-    w39.setBounds(0, 39, 280, 31);
+    w39.setBounds(0, 25, 280, 31);
     w39.setFont(&LucarneFontBody);
     w39.setAlign(TextAlign::Center);
-    w40.setBounds(0, 67, 280, 23);
+    w40.setBounds(0, 53, 280, 23);
     w40.setFont(&LucarneFontBody);
     w40.setAlign(TextAlign::Center);
-    w41.setBounds(0, 91, 280, 24);
+    w41.setBounds(0, 74, 280, 24);
     w41.setFont(&LucarneFontBody);
     w41.setAlign(TextAlign::Center);
-    w42.setBounds(103, 122, 77, 77);
+    w42.setBounds(108, 113, 64, 64);
     w43.setBounds(0, 93, 280, 49);
     w43.setFont(&Font_style_Up_DoItwithLove_mqzw28kc_48_w400);
     w43.setColor(color565(244, 112, 112));
@@ -407,12 +408,12 @@ inline void build(UI &ui) {
         st.hasColor = true;
         w52.setItemStyle(0, st);
     }
-    w52.addItem("English", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit);
-    w52.addItem("Italian", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit);
-    w52.addItem("Deutsch", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit);
-    w52.addItem("Portugues", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit);
-    w52.addItem("espanol", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit);
-    w52.addItem(BacLocale::lbl_back, nullptr, &screen_scr_mr14qsc4g, Transition::Inherit);
+    w52.addItem("English", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit, MenuItemOpts{nullptr, true, 0, 0});
+    w52.addItem("Italian", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit, MenuItemOpts{nullptr, true, 0, 0});
+    w52.addItem("Deutsch", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit, MenuItemOpts{nullptr, true, 0, 0});
+    w52.addItem("Português", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit, MenuItemOpts{nullptr, true, 0, 0});
+    w52.addItem("español", nullptr, &screen_scr_mr14qsc4g, Transition::Inherit, MenuItemOpts{nullptr, true, 0, 0});
+    w52.addItem(BacLocale::lbl_back, nullptr, &screen_scr_mr14qsc4g, Transition::Inherit, MenuItemOpts{nullptr, true, 0, 0});
     w53.setActiveFill(color565(235, 235, 235));
     w53.setActiveText(color565(0, 0, 0));
     w53.setInactiveFill(color565(52, 67, 96));
@@ -443,10 +444,10 @@ inline void build(UI &ui) {
     w56.setBounds(0, 73, 280, 21);
     w56.setFont(&LucarneFontBody);
     w56.setAlign(TextAlign::Center);
-    w57.setBounds(0, 27, 280, 42);
+    w57.setBounds(0, 60, 280, 42);
     w57.setFont(&LucarneFontBody);
     w57.setAlign(TextAlign::Center);
-    w58.setBounds(104, 88, 72, 72);
+    w58.setBounds(109, 113, 64, 64);
     w59.setBounds(0, 47, 280, 28);
     w59.setFont(&LucarneFontBody);
     w59.setAlign(TextAlign::Center);
@@ -473,10 +474,10 @@ inline void build(UI &ui) {
         st.hasColor = true;
         w63.setItemStyle(0, st);
     }
-    w64.setBounds(0, 25, 280, 42);
+    w64.setBounds(0, 63, 280, 42);
     w64.setFont(&LucarneFontBody);
     w64.setAlign(TextAlign::Center);
-    w65.setBounds(104, 88, 72, 72);
+    w65.setBounds(108, 114, 64, 64);
     w66.setBounds(96, 74, 90, 90);
     w67.setBounds(0, 34, 280, 34);
     w67.setFont(&LucarneFontBody);
@@ -587,20 +588,26 @@ inline void build(UI &ui) {
     w86.setBounds(0, 106, 280, 25);
     w86.setFont(&LucarneFontBody);
     w86.setAlign(TextAlign::Center);
-    w87.setBounds(104, 88, 72, 72);
-    w88.setBounds(0, 27, 280, 42);
+    w87.setBounds(0, 27, 280, 42);
+    w87.setFont(&Font_style_Fira_Sans_18_w400);
+    w87.setAlign(TextAlign::Center);
+    w88.setBounds(0, 184, 280, 27);
     w88.setFont(&LucarneFontBody);
+    w88.setColor(color565(246, 4, 4));
     w88.setAlign(TextAlign::Center);
-    w89.setBounds(0, 206, 280, 27);
-    w89.setFont(&LucarneFontBody);
-    w89.setAlign(TextAlign::Center);
-    w90.setBounds(0, 98, 280, 30);
+    w89.setShowValue(true);
+    w89.setValueFont(&LucarneFontBody);
+    w89.setValueColor(color565(0, 0, 0));
+    w90.setBounds(0, 70, 280, 30);
     w90.setFont(&LucarneFontBody);
     w90.setAlign(TextAlign::Center);
-    w91.setBounds(0, 118, 280, 28);
+    w91.setBounds(0, 96, 280, 28);
     w91.setFont(&LucarneFontBody);
     w91.setColor(color565(255, 0, 0));
     w91.setAlign(TextAlign::Center);
+    w92.setShowValue(true);
+    w92.setValueFont(&LucarneFontBody);
+    w92.setValueColor(color565(0, 0, 0));
 
     screen_scr_mqwqhtj72.add(&w0);
     screen_scr_mqwqhtj72.add(&w1);
@@ -647,9 +654,7 @@ inline void build(UI &ui) {
     screen_scr_mqzxocmh1e.add(&w42);
     screen_scr_mqzyaiw41j.add(&w43);
     screen_scr_mqzyaiw41j.add(&w44);
-    screen_scr_mqzyaiw41j.add(&w45);
     screen_scr_mqzyaiw41j.add(&w46);
-    screen_scr_mqzyaiw41j.add(&w47);
     screen_scr_mr14c6nfb.add(&w48);
     screen_scr_mr14qsc4g.add(&w49);
     screen_scr_mr15ivvsd.add(&w50);
@@ -694,8 +699,10 @@ inline void build(UI &ui) {
     screen_scr_mr1760ww3i.add(&w89);
     screen_scr_mr3hcyofj.add(&w90);
     screen_scr_mr3hcyofj.add(&w91);
+    screen_scr_mr3hcyofj.add(&w92);
 
     ui.setString("bd_name_device", "lb_v01dev");
+    ui.setFloat("ota_pct", 0.0f);
 
     ui.show(&screen_scr_mqxozray1);
 }
@@ -718,7 +725,8 @@ inline void update() {
 
 // Usage in your sketch:
 //   #include "Projet_setup.h"
-//   Display display; UI ui(display);
+//   ST7789 display;
+//   UI ui(display);
 //   initSpiBus();
 //   projet::initStorage();  // before display.begin()
 //   display.begin(projet::displayPins(), projet::displayOptions(), buffer, &SPI);
