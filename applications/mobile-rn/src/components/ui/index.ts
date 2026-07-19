@@ -6,4 +6,5 @@ export { SegmentedControl } from "./SegmentedControl";
 export { NavMenuItem, NavMenuGroup } from "./NavMenu";
 export { Screen } from "./Screen";
 export { StatusPill } from "./StatusPill";
+export { Slider } from "./Slider";
 export { Snackbar } from "./Snackbar";
