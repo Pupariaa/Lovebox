@@ -21,6 +21,7 @@ export type MessageLayer = {
   fps: number;
   imageUri: string | null;
   hidden: boolean;
+  rotation: number;
 };
 
 export type MessageScene = {
@@ -47,6 +48,7 @@ export function createLayer(partial: Partial<MessageLayer> & { id: string; type:
     fps: 12,
     imageUri: null,
     hidden: false,
+    rotation: 0,
     ...partial,
   };
 }
