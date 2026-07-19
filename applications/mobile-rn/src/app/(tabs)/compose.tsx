@@ -19,6 +19,8 @@ import { AppConfig } from "@/config/AppConfig";
 import { COMPOSER_COLOR_PALETTE } from "@/domain/bacm/emojiCatalog";
 import { ensureFontsLoaded, FONTS, type FontId } from "@/domain/bacm/font";
 import { emojiToTwemojiRef } from "@/domain/bacm/twemoji";
+import { pasteMediaFromClipboard } from "@/domain/gif/gifPaste";
+import { extractVideoToLayer, VideoModuleUnavailableError } from "@/domain/video/videoFrames";
 import { measureTextBox } from "@/domain/bacm/sceneRasterizer";
 import { createLayer, type MessageLayer, type MessageScene } from "@/domain/bacm/scene";
 import { nextLayerId } from "@/domain/bacm/sceneGeometry";
@@ -47,6 +49,8 @@ export default function ComposeScreen() {
   const setScene = useAppStore((s) => s.setComposerScene);
   const selectedTarget = useAppStore((s) => s.selectedTarget);
   const linkedTargets = useAppStore((s) => s.linkedTargets);
+  const selectedTargetIds = useAppStore((s) => s.selectedTargetIds);
+  const toggleTargetId = useAppStore((s) => s.toggleTargetId);
   const loading = useAppStore((s) => s.loading);
   const sendMessage = useAppStore((s) => s.sendMessage);
   const showSnackbar = useAppStore((s) => s.showSnackbar);
@@ -56,9 +60,21 @@ export default function ComposeScreen() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [emojiModal, setEmojiModal] = useState(false);
   const [customEmojiModal, setCustomEmojiModal] = useState(false);
+  const [recipientModal, setRecipientModal] = useState(false);
   const [customEmoji, setCustomEmoji] = useState("");
 
   const target = selectedTarget ?? linkedTargets[0] ?? null;
+  const selectedTargetsList = linkedTargets.filter((t) =>
+    selectedTargetIds.includes(t.device_id),
+  );
+  const recipientText =
+    selectedTargetsList.length > 1
+      ? `Pour ${selectedTargetsList.length} boîtes`
+      : selectedTargetsList.length === 1
+        ? `Pour la boîte de ${targetLabel(selectedTargetsList[0])}`
+        : target
+          ? `Pour la boîte de ${targetLabel(target)}`
+          : "Aucune boîte liée.";
   const displayWidth = Math.min(width - spacing.lg * 2, 340);
   const selected = scene.layers.find((l) => l.id === selectedId) ?? null;
 
@@ -130,12 +146,40 @@ export default function ComposeScreen() {
   const addCustomEmoji = () => {
     const ref = emojiToTwemojiRef(customEmoji);
     if (!ref) {
-      showSnackbar("Aucun emoji détecté");
+      showSnackbar("Aucun emoji détecté.");
       return;
     }
     addIcon(ref, false);
     setCustomEmoji("");
     setCustomEmojiModal(false);
+  };
+
+  const pasteKeyboardGif = async () => {
+    const media = await pasteMediaFromClipboard();
+    if (media.kind === "gif") {
+      addIcon(`gif:${media.uri}`, true);
+      setCustomEmojiModal(false);
+    } else if (media.kind === "image") {
+      insertPhoto(media.uri);
+      setCustomEmojiModal(false);
+    } else {
+      showSnackbar("Aucun GIF ou image dans le presse-papiers.");
+    }
+  };
+
+  const insertPhoto = (uri: string) => {
+    const id = nextLayerId(scene.layers, "p");
+    const layer = createLayer({
+      id,
+      type: "photo",
+      imageUri: uri,
+      x: 40,
+      y: 40,
+      w: 200,
+      h: 160,
+    });
+    update({ ...scene, layers: [...scene.layers, layer] });
+    setSelectedId(id);
   };
 
   const addPhoto = async () => {
@@ -144,18 +188,7 @@ export default function ComposeScreen() {
       quality: 0.9,
     });
     if (result.canceled || !result.assets[0]) return;
-    const id = nextLayerId(scene.layers, "p");
-    const layer = createLayer({
-      id,
-      type: "photo",
-      imageUri: result.assets[0].uri,
-      x: 40,
-      y: 40,
-      w: 200,
-      h: 160,
-    });
-    update({ ...scene, layers: [...scene.layers, layer] });
-    setSelectedId(id);
+    insertPhoto(result.assets[0].uri);
   };
 
   const addGif = async () => {
@@ -169,10 +202,34 @@ export default function ComposeScreen() {
       asset.fileName?.toLowerCase().endsWith(".gif") ||
       asset.uri.toLowerCase().includes(".gif");
     if (!isGif) {
-      showSnackbar("Choisissez un fichier GIF");
+      showSnackbar("Choisis un fichier GIF.");
       return;
     }
     addIcon(`gif:${asset.uri}`, true);
+  };
+
+  const addVideo = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      quality: 1,
+    });
+    if (result.canceled || !result.assets[0]) return;
+    const asset = result.assets[0];
+    showSnackbar(`Extraction des ${AppConfig.VIDEO_MAX_SECONDS} premières secondes...`);
+    try {
+      const ref = await extractVideoToLayer(asset.uri, asset.duration ?? null);
+      if (!ref) {
+        showSnackbar("Impossible d'extraire la vidéo.");
+        return;
+      }
+      addIcon(ref, true);
+    } catch (e) {
+      if (e instanceof VideoModuleUnavailableError) {
+        showSnackbar("Vidéo indisponible : reconstruis le dev client.");
+      } else {
+        showSnackbar("Impossible d'extraire la vidéo.");
+      }
+    }
   };
 
   const pickBackgroundImage = async () => {
@@ -194,9 +251,32 @@ export default function ComposeScreen() {
     setSelectedId(null);
   };
 
+  const duplicateSelected = () => {
+    if (!selected) return;
+    const id = nextLayerId(scene.layers, selected.type[0]);
+    const copy: MessageLayer = {
+      ...selected,
+      id,
+      x: Math.min(W - 8, selected.x + 12),
+      y: Math.min(H - 8, selected.y + 12),
+    };
+    update({ ...scene, layers: [...scene.layers, copy] });
+    setSelectedId(id);
+  };
+
+  const toggleHideSelected = () => {
+    if (!selected) return;
+    update({
+      ...scene,
+      layers: scene.layers.map((l) =>
+        l.id === selected.id ? { ...l, hidden: !l.hidden } : l,
+      ),
+    });
+  };
+
   const onSend = async () => {
     if (!target) {
-      showSnackbar("Aucune boîte liée pour recevoir ton message");
+      showSnackbar("Aucune boîte liée pour recevoir ton message.");
       return;
     }
     const ok = await sendMessage();
@@ -206,12 +286,19 @@ export default function ComposeScreen() {
   return (
     <Screen title="Écrire">
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
-        <View style={styles.recipientRow}>
+        <Pressable
+          style={styles.recipientRow}
+          onPress={() => linkedTargets.length > 0 && setRecipientModal(true)}
+          disabled={linkedTargets.length === 0}
+        >
           <Ionicons name="heart" size={16} color={target ? colors.rosePrimary : colors.danger} />
           <AppText variant="bodyMedium" color={target ? colors.textMuted : colors.danger}>
-            {target ? `Pour la boîte de ${targetLabel(target)}` : "Aucune boîte liée"}
+            {recipientText}
           </AppText>
-        </View>
+          {linkedTargets.length > 1 ? (
+            <Ionicons name="chevron-down" size={16} color={colors.textMuted} />
+          ) : null}
+        </Pressable>
 
         <View style={styles.canvasWrap}>
           <SceneEditorCanvas
@@ -233,11 +320,35 @@ export default function ComposeScreen() {
           <View style={styles.addRow}>
             <AddButton icon="text" label="Texte" onPress={addText} />
             <AddButton icon="happy" label="Emoji" onPress={() => setEmojiModal(true)} />
-            <AddButton icon="chatbubble-ellipses" label="Emoji perso" onPress={() => setCustomEmojiModal(true)} />
-            <AddButton icon="image" label="Photo" onPress={addPhoto} />
+            <AddButton icon="chatbubble-ellipses" label="Clavier" onPress={() => setCustomEmojiModal(true)} />
             <AddButton icon="film" label="GIF" onPress={addGif} />
+            <AddButton icon="image" label="Photo" onPress={addPhoto} />
+            <AddButton icon="videocam" label="Vidéo" onPress={addVideo} />
           </View>
         </Card>
+
+        {scene.layers.length > 0 ? (
+          <Card>
+            <AppText variant="labelLarge" muted>
+              Calques
+            </AppText>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.layersRow}
+            >
+              {scene.layers.map((l, i) => (
+                <LayerChip
+                  key={l.id}
+                  layer={l}
+                  index={scene.layers.length - i}
+                  active={l.id === selectedId}
+                  onPress={() => setSelectedId(l.id === selectedId ? null : l.id)}
+                />
+              ))}
+            </ScrollView>
+          </Card>
+        ) : null}
 
         {selected ? (
           <Card>
@@ -248,13 +359,16 @@ export default function ComposeScreen() {
                   : selected.type === "photo"
                     ? "Photo"
                     : "Emoji / GIF"}
+                {selected.hidden ? "  (masqué)" : ""}
               </AppText>
-              <Pressable onPress={deleteSelected} hitSlop={8} style={styles.deleteBtn}>
-                <Ionicons name="trash" size={18} color={colors.danger} />
-                <AppText variant="caption" color={colors.danger}>
-                  Supprimer
-                </AppText>
-              </Pressable>
+              <View style={styles.actionsRow}>
+                <IconAction
+                  icon={selected.hidden ? "eye-off" : "eye"}
+                  onPress={toggleHideSelected}
+                />
+                <IconAction icon="copy" onPress={duplicateSelected} />
+                <IconAction icon="trash" color={colors.danger} onPress={deleteSelected} />
+              </View>
             </View>
 
             {selected.type === "text" ? (
@@ -320,6 +434,20 @@ export default function ComposeScreen() {
                 </AppText>
               </View>
             ) : null}
+
+            <View style={styles.panel}>
+              <Stepper
+                label="Rotation"
+                value={selected.rotation}
+                onDec={() =>
+                  updateSelected({ rotation: (((selected.rotation - 15) % 360) + 360) % 360 })
+                }
+                onInc={() => updateSelected({ rotation: (selected.rotation + 15) % 360 })}
+              />
+              <AppText variant="caption" muted>
+                Astuce : pincez pour redimensionner, tournez à deux doigts pour pivoter.
+              </AppText>
+            </View>
           </Card>
         ) : null}
 
@@ -331,6 +459,7 @@ export default function ComposeScreen() {
             value={scene.bgType === "color" ? scene.bgColor : ""}
             onSelect={(c) => update({ ...scene, bgType: "color", bgColor: c, bgImageUri: null })}
           />
+          <View style={styles.bgCtaSpacer} />
           {scene.bgType === "image" && scene.bgImageUri ? (
             <Button
               label="Retirer l'image de fond"
@@ -356,8 +485,8 @@ export default function ComposeScreen() {
               <AppText variant="titleMedium">Message éphémère</AppText>
               <AppText variant="caption" muted>
                 {composerEphemeral
-                  ? "Disparaît 10 secondes après ouverture, sans historique"
-                  : "Message classique, visible dans l'historique"}
+                  ? "Disparaît 10 secondes après ouverture, sans historique."
+                  : "Message classique, visible dans l'historique."}
               </AppText>
             </View>
             <Switch
@@ -377,6 +506,48 @@ export default function ComposeScreen() {
           icon={<Ionicons name="send" size={18} color={colors.onPrimary} />}
         />
       </ScrollView>
+
+      <Modal
+        visible={recipientModal}
+        animationType="slide"
+        transparent
+        onRequestClose={() => setRecipientModal(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setRecipientModal(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHeader}>
+              <AppText variant="titleMedium">Destinataires</AppText>
+              <Pressable onPress={() => setRecipientModal(false)} hitSlop={12}>
+                <Ionicons name="close" size={24} color={colors.textPrimary} />
+              </Pressable>
+            </View>
+            <AppText variant="caption" muted>
+              Sélectionne une ou plusieurs boîtes pour envoyer ce message.
+            </AppText>
+            <ScrollView style={styles.recipientList}>
+              {linkedTargets.map((t) => {
+                const checked = selectedTargetIds.includes(t.device_id);
+                return (
+                  <Pressable
+                    key={t.device_id}
+                    style={styles.recipientItem}
+                    onPress={() => toggleTargetId(t.device_id)}
+                  >
+                    <Ionicons
+                      name={checked ? "checkbox" : "square-outline"}
+                      size={22}
+                      color={checked ? colors.rosePrimary : colors.textMuted}
+                    />
+                    <AppText variant="bodyMedium" style={styles.recipientItemLabel}>
+                      {targetLabel(t)}
+                    </AppText>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </Pressable>
+        </Pressable>
+      </Modal>
 
       <Modal
         visible={emojiModal}
@@ -406,13 +577,13 @@ export default function ComposeScreen() {
         <View style={styles.centerBackdrop}>
           <View style={styles.customSheet}>
             <View style={styles.modalHeader}>
-              <AppText variant="titleMedium">Emoji du clavier</AppText>
+              <AppText variant="titleMedium">Clavier : emoji & GIF</AppText>
               <Pressable onPress={() => setCustomEmojiModal(false)} hitSlop={12}>
                 <Ionicons name="close" size={24} color={colors.textPrimary} />
               </Pressable>
             </View>
             <AppText variant="bodyMedium" muted>
-              Tapez ou collez un emoji depuis le clavier de votre téléphone.
+              Tape ou colle un emoji depuis le clavier de ton téléphone.
             </AppText>
             <TextField
               value={customEmoji}
@@ -421,6 +592,15 @@ export default function ComposeScreen() {
               autoCapitalize="none"
             />
             <Button label="Ajouter" onPress={addCustomEmoji} disabled={!customEmoji.trim()} />
+            <AppText variant="bodyMedium" muted>
+              Copie un GIF depuis le clavier (bouton GIF) ou une appli, puis colle-le ici.
+            </AppText>
+            <Button
+              label="Coller un GIF"
+              variant="secondary"
+              onPress={pasteKeyboardGif}
+              icon={<Ionicons name="clipboard" size={16} color={colors.textPrimary} />}
+            />
           </View>
         </View>
       </Modal>
@@ -442,6 +622,64 @@ function AddButton({
       <Ionicons name={icon} size={20} color={colors.rosePrimary} />
       <AppText variant="caption" color={colors.textMuted} center>
         {label}
+      </AppText>
+    </Pressable>
+  );
+}
+
+function IconAction({
+  icon,
+  onPress,
+  color = colors.textPrimary,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  onPress: () => void;
+  color?: string;
+}) {
+  return (
+    <Pressable onPress={onPress} hitSlop={8} style={styles.iconAction}>
+      <Ionicons name={icon} size={18} color={color} />
+    </Pressable>
+  );
+}
+
+function layerChipMeta(layer: MessageLayer): {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+} {
+  if (layer.type === "text") {
+    return { icon: "text", label: layer.text?.split("\n")[0]?.slice(0, 8) || "Texte" };
+  }
+  if (layer.type === "photo") return { icon: "image", label: "Photo" };
+  if (layer.ref?.startsWith("gif:")) return { icon: "film", label: "GIF" };
+  if (layer.ref?.startsWith("video:")) return { icon: "videocam", label: "Vidéo" };
+  return { icon: "happy", label: "Emoji" };
+}
+
+function LayerChip({
+  layer,
+  index,
+  active,
+  onPress,
+}: {
+  layer: MessageLayer;
+  index: number;
+  active: boolean;
+  onPress: () => void;
+}) {
+  const meta = layerChipMeta(layer);
+  return (
+    <Pressable
+      onPress={onPress}
+      style={[styles.layerChip, active && styles.layerChipActive, layer.hidden && styles.layerChipHidden]}
+    >
+      <Ionicons
+        name={layer.hidden ? "eye-off" : meta.icon}
+        size={16}
+        color={active ? colors.onPrimary : colors.textMuted}
+      />
+      <AppText variant="caption" color={active ? colors.onPrimary : colors.textMuted}>
+        {index}. {meta.label}
       </AppText>
     </Pressable>
   );
@@ -573,6 +811,19 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacing.sm,
   },
+  recipientList: {
+    marginTop: spacing.sm,
+    maxHeight: 320,
+  },
+  recipientItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  recipientItemLabel: {
+    flex: 1,
+  },
   canvasWrap: {
     alignItems: "center",
     gap: spacing.sm,
@@ -582,11 +833,14 @@ const styles = StyleSheet.create({
   },
   addRow: {
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
   addBtn: {
-    flex: 1,
+    flexBasis: "22%",
+    flexGrow: 1,
+    minWidth: 68,
     alignItems: "center",
     gap: spacing.xs,
     paddingVertical: spacing.md,
@@ -595,15 +849,48 @@ const styles = StyleSheet.create({
     borderColor: colors.outline,
     backgroundColor: colors.surfaceDark,
   },
+  layersRow: {
+    gap: spacing.sm,
+    paddingVertical: spacing.xs,
+    marginTop: spacing.sm,
+  },
+  layerChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.outline,
+    backgroundColor: colors.surfaceDark,
+  },
+  layerChipActive: {
+    backgroundColor: colors.rosePrimary,
+    borderColor: colors.rosePrimary,
+  },
+  layerChipHidden: {
+    opacity: 0.55,
+  },
   inspectorHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
   },
-  deleteBtn: {
+  actionsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacing.xs,
+    gap: spacing.sm,
+  },
+  iconAction: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: colors.outline,
+    backgroundColor: colors.surfaceDark,
   },
   panel: {
     gap: spacing.md,
@@ -670,6 +957,9 @@ const styles = StyleSheet.create({
   },
   swatchActive: {
     borderColor: colors.creamHighlight,
+  },
+  bgCtaSpacer: {
+    height: spacing.md,
   },
   stepper: {
     flexDirection: "row",
