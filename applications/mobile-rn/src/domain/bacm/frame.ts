@@ -6,7 +6,7 @@ export type IconFrameData = {
   alpha: Uint8Array | null;
 };
 
-export const MAX_FRAMES = 24;
+export const MAX_FRAMES = 30;
 
 export function sampleFrameIndices(count: number): number[] {
   if (count <= MAX_FRAMES) {
@@ -77,6 +77,104 @@ export function frameFromRgba(
         Math.round(gAcc / aAcc),
         Math.round(bAcc / aAcc),
       );
+    }
+  }
+  return { pixels, side: size, alpha };
+}
+
+// Bilinear resize + Floyd-Steinberg dithering to RGB565. Error diffusion hides the banding that
+// makes flat gradients (skies, skin, video) look posterized on the 16-bit display. Kept separate
+// from frameFromRgba so crisp assets (emoji/icons) stay un-dithered.
+export function frameFromRgbaDithered(
+  src: Uint8Array | Uint8ClampedArray,
+  srcW: number,
+  srcH: number,
+  size: number,
+): IconFrameData {
+  const pixels = new Uint16Array(size * size);
+  const alpha = new Uint8Array(size * size);
+  const rBuf = new Float32Array(size * size);
+  const gBuf = new Float32Array(size * size);
+  const bBuf = new Float32Array(size * size);
+  const scale = Math.min(size / srcW, size / srcH);
+  const dw = srcW * scale;
+  const dh = srcH * scale;
+  const offX = (size - dw) / 2;
+  const offY = (size - dh) / 2;
+
+  for (let y = 0; y < size; y++) {
+    const fyf = (y + 0.5 - offY) / scale - 0.5;
+    for (let x = 0; x < size; x++) {
+      const fxf = (x + 0.5 - offX) / scale - 0.5;
+      if (fxf < -0.5 || fyf < -0.5 || fxf > srcW - 0.5 || fyf > srcH - 0.5) {
+        continue;
+      }
+      const x0 = Math.floor(fxf);
+      const y0 = Math.floor(fyf);
+      const x1 = Math.min(srcW - 1, x0 + 1);
+      const y1 = Math.min(srcH - 1, y0 + 1);
+      const cx0 = Math.max(0, x0);
+      const cy0 = Math.max(0, y0);
+      const wx = fxf - x0;
+      const wy = fyf - y0;
+      const w00 = (1 - wx) * (1 - wy);
+      const w10 = wx * (1 - wy);
+      const w01 = (1 - wx) * wy;
+      const w11 = wx * wy;
+
+      const row0 = cy0 * srcW;
+      const row1 = y1 * srcW;
+      const o00 = (row0 + cx0) * 4;
+      const o10 = (row0 + x1) * 4;
+      const o01 = (row1 + cx0) * 4;
+      const o11 = (row1 + x1) * 4;
+
+      const a00 = src[o00 + 3];
+      const a10 = src[o10 + 3];
+      const a01 = src[o01 + 3];
+      const a11 = src[o11 + 3];
+      const aAcc = w00 * a00 + w10 * a10 + w01 * a01 + w11 * a11;
+      const outA = Math.round(aAcc);
+      if (outA < 4) continue;
+      const idx = y * size + x;
+      alpha[idx] = outA > 255 ? 255 : outA;
+      const rAcc = w00 * a00 * src[o00] + w10 * a10 * src[o10] + w01 * a01 * src[o01] + w11 * a11 * src[o11];
+      const gAcc = w00 * a00 * src[o00 + 1] + w10 * a10 * src[o10 + 1] + w01 * a01 * src[o01 + 1] + w11 * a11 * src[o11 + 1];
+      const bAcc = w00 * a00 * src[o00 + 2] + w10 * a10 * src[o10 + 2] + w01 * a01 * src[o01 + 2] + w11 * a11 * src[o11 + 2];
+      rBuf[idx] = rAcc / aAcc;
+      gBuf[idx] = gAcc / aAcc;
+      bBuf[idx] = bAcc / aAcc;
+    }
+  }
+
+  const clamp = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : v);
+  const diffuse = (buf: Float32Array, idx: number, err: number, x: number) => {
+    if (x + 1 < size) buf[idx + 1] += (err * 7) / 16;
+    const below = idx + size;
+    if (below < buf.length) {
+      if (x > 0) buf[below - 1] += (err * 3) / 16;
+      buf[below] += (err * 5) / 16;
+      if (x + 1 < size) buf[below + 1] += (err * 1) / 16;
+    }
+  };
+
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = y * size + x;
+      if (alpha[idx] === 0) continue;
+      const r = clamp(rBuf[idx]);
+      const g = clamp(gBuf[idx]);
+      const b = clamp(bBuf[idx]);
+      const r5 = Math.round((r * 31) / 255);
+      const g6 = Math.round((g * 63) / 255);
+      const b5 = Math.round((b * 31) / 255);
+      const rq = (r5 << 3) | (r5 >> 2);
+      const gq = (g6 << 2) | (g6 >> 4);
+      const bq = (b5 << 3) | (b5 >> 2);
+      pixels[idx] = ((r5 << 11) | (g6 << 5) | b5) & 0xffff;
+      diffuse(rBuf, idx, r - rq, x);
+      diffuse(gBuf, idx, g - gq, x);
+      diffuse(bBuf, idx, b - bq, x);
     }
   }
   return { pixels, side: size, alpha };
