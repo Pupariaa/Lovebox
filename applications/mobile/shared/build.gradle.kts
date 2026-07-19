@@ -46,6 +46,7 @@ kotlin {
                 implementation(libs.multiplatform.settings.noarg)
                 implementation(libs.coil.compose)
                 implementation(libs.coil.network)
+                implementation(libs.androidx.security.crypto)
                 implementation("androidx.core:core-ktx:1.15.0")
             }
         }
