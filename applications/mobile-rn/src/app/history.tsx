@@ -42,6 +42,7 @@ function statusColor(status?: string): string {
 
 function HistoryItem({ item, title }: { item: SentMessageDto; title: string }) {
   const [preview, setPreview] = useState<string | null>(item.preview_base64 ?? null);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const label = statusLabel(item.status);
 
   useEffect(() => {
@@ -50,8 +51,14 @@ function HistoryItem({ item, title }: { item: SentMessageDto; title: string }) {
     (async () => {
       try {
         const base64 = await getMessagePreview(item.id);
-        if (!cancelled) setPreview(base64);
-      } catch {
+        if (!cancelled) {
+          setPreview(base64);
+          setPreviewFailed(false);
+        }
+      } catch (error) {
+        if (cancelled) return;
+        console.warn("message preview load failed", item.id, error);
+        setPreviewFailed(true);
       }
     })();
     return () => {
@@ -81,6 +88,11 @@ function HistoryItem({ item, title }: { item: SentMessageDto; title: string }) {
           {label ? (
             <AppText variant="caption" style={{ color: statusColor(item.status) }}>
               {label}
+            </AppText>
+          ) : null}
+          {previewFailed ? (
+            <AppText variant="caption" color={colors.textMuted}>
+              Aperçu indisponible.
             </AppText>
           ) : null}
         </View>
