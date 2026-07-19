@@ -27,17 +27,18 @@ $containerBuilder = new ContainerBuilder();
 $containerBuilder->addDefinitions(require $root . '/config/container.php');
 $container = $containerBuilder->build();
 
+$settings = $container->get('settings');
+
 AppFactory::setContainer($container);
 $app = AppFactory::create();
 $app->setBasePath('');
 $app->addBodyParsingMiddleware();
 $app->addRoutingMiddleware();
-$app->add(new CorsMiddleware());
-$app->addErrorMiddleware(
-    filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN),
-    true,
-    true
-);
+$app->add(new CorsMiddleware($settings['cors']['allowed_origins'] ?? []));
+
+$appDebug = filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN);
+$displayErrorDetails = $appDebug && ($settings['app']['is_local'] ?? false);
+$app->addErrorMiddleware($displayErrorDetails, true, true);
 
 ApiRoutes::register($app);
 
