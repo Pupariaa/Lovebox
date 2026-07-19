@@ -23,6 +23,7 @@ public:
     static const uint32_t HTTP_TIMEOUT_MS = 32000;
     static const uint32_t HEARTBEAT_INTERVAL_MS = 60000;
     static const size_t MAX_MSG = 3145728;
+    static const size_t MAX_CMD_BODY = 16384;
 
     class PollBodyStream : public Stream {
     public:
@@ -483,15 +484,58 @@ private:
         BacTls::configure(client);
         HTTPClient http;
         http.setTimeout(8000);
-        if (!http.begin(client, url)) return;
+        if (!http.begin(client, url)) {
+            noteApiFailure();
+            return;
+        }
         http.addHeader("X-Device-Uuid", _config->uuid);
         http.addHeader("X-Device-Secret", _config->apiSecret);
         int code = http.GET();
         if (code == 200) {
-            String body = http.getString();
+            noteApiSuccess();
+            int len = http.getSize();
+            if (len > (int)MAX_CMD_BODY) {
+                BacDebug::eventf("cloud", "commands body too large %d", len);
+                http.end();
+                return;
+            }
+            String body = readBoundedBody(http, MAX_CMD_BODY);
             if (body.length() > 2) _configHandler(_configHandlerCtx, body.c_str());
+        } else if (code < 0 || code >= 500) {
+            noteApiFailure();
         }
         http.end();
+    }
+
+    static String readBoundedBody(HTTPClient &http, size_t maxLen) {
+        WiFiClient *stream = http.getStreamPtr();
+        if (!stream) return String();
+        int len = http.getSize();
+        if (len > (int)maxLen) return String();
+        String out;
+        out.reserve((len > 0 && (size_t)len <= maxLen) ? (size_t)len : 256);
+        uint8_t buf[512];
+        uint32_t started = millis();
+        while (len < 0 || out.length() < (size_t)len) {
+            size_t avail = stream->available();
+            if (avail) {
+                if (avail > sizeof(buf)) avail = sizeof(buf);
+                int n = stream->readBytes(buf, avail);
+                if (n <= 0) {
+                    if (!http.connected()) break;
+                    delay(1);
+                    continue;
+                }
+                if (out.length() + (size_t)n > maxLen) return String();
+                out.concat((const char *)buf, (unsigned int)n);
+                started = millis();
+                continue;
+            }
+            if (!http.connected()) break;
+            if (millis() - started > 8000) break;
+            delay(1);
+        }
+        return out;
     }
 
     static int resolvePollBodyLen(HTTPClient &http) {
@@ -554,7 +598,10 @@ private:
         BacTls::configure(client);
         HTTPClient http;
         http.setTimeout(HTTP_TIMEOUT_MS);
-        if (!http.begin(client, url)) return;
+        if (!http.begin(client, url)) {
+            noteApiFailure();
+            return;
+        }
         const char *pollHeaders[] = {"X-Message-Id", "X-Message-Bytes", "Content-Length", "X-Display-Duration-Sec"};
         http.collectHeaders(pollHeaders, 4);
         http.addHeader("X-Device-Uuid", _config->uuid);
@@ -568,6 +615,12 @@ private:
             http.end();
             return;
         }
+        if (code < 0 || code >= 500) {
+            noteApiFailure();
+            http.end();
+            return;
+        }
+        noteApiSuccess();
         if (code == 200) {
             String msgIdHdr = http.header("X-Message-Id");
             uint32_t msgId = msgIdHdr.length() ? (uint32_t)msgIdHdr.toInt() : 0;
@@ -651,7 +704,10 @@ private:
         BacTls::configure(client);
         HTTPClient http;
         http.setTimeout(8000);
-        if (!http.begin(client, url)) return;
+        if (!http.begin(client, url)) {
+            noteApiFailure();
+            return;
+        }
         http.addHeader("Content-Type", "application/json");
         http.addHeader("X-Device-Uuid", _config->uuid);
         http.addHeader("X-Device-Secret", _config->apiSecret);
@@ -676,11 +732,13 @@ private:
         int code = http.POST(body);
         String resp = http.getString();
         if (code >= 200 && code <= 299) {
+            noteApiSuccess();
             String otaPayload = extractJsonObject(resp, "firmware_update");
             if (otaPayload.length() && _otaOfferHandler && _config->claimed) {
                 _otaOfferHandler(_otaOfferHandlerCtx, otaPayload.c_str());
             }
         } else {
+            if (code < 0 || code >= 500) noteApiFailure();
             BacDebug::eventf("cloud", "heartbeat failed http %d", code);
         }
         http.end();
