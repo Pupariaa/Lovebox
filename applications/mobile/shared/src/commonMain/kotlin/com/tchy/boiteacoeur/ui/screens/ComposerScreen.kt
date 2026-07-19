@@ -368,7 +368,7 @@ private fun ComposerContent(
                 vm.composerScene = scene
                 vm.sendMessage(onSent)
             },
-            enabled = !vm.loading && vm.selectedTarget != null,
+            enabled = !vm.sendingMessage && vm.selectedTarget != null,
             modifier = Modifier.fillMaxWidth().height(44.dp),
             colors = ButtonDefaults.buttonColors(containerColor = RosePrimary),
         ) {
