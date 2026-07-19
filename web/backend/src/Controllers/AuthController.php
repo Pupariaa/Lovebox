@@ -19,7 +19,11 @@ final class AuthController
     {
         $body = (array) $request->getParsedBody();
         try {
-            $data = $this->auth->register((string) ($body['email'] ?? ''), (string) ($body['password'] ?? ''));
+            $data = $this->auth->register(
+                (string) ($body['email'] ?? ''),
+                (string) ($body['password'] ?? ''),
+                (string) ($body['first_name'] ?? '')
+            );
             return JsonResponse::ok($response, ['ok' => true] + $data, 201);
         } catch (\InvalidArgumentException $e) {
             return JsonResponse::error($response, $e->getMessage(), 400);
