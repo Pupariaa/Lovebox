@@ -7,7 +7,7 @@ import { AppText, Card, Screen } from "@/components/ui";
 import { getMessagePreview } from "@/data/api/ApiClient";
 import type { SentMessageDto } from "@/data/api/models";
 import { useAppStore } from "@/store/appStore";
-import { formatDateTime } from "@/util/formatters";
+import { formatDateTime, targetLabel } from "@/util/formatters";
 import { colors, radius, spacing } from "@/theme/theme";
 
 function statusLabel(status?: string): string {
@@ -40,7 +40,7 @@ function statusColor(status?: string): string {
   }
 }
 
-function HistoryItem({ item }: { item: SentMessageDto }) {
+function HistoryItem({ item, title }: { item: SentMessageDto; title: string }) {
   const [preview, setPreview] = useState<string | null>(item.preview_base64 ?? null);
   const label = statusLabel(item.status);
 
@@ -74,7 +74,7 @@ function HistoryItem({ item }: { item: SentMessageDto }) {
           )}
         </View>
         <View style={styles.flex}>
-          <AppText variant="titleMedium">{item.target_device_name}</AppText>
+          <AppText variant="titleMedium">{title}</AppText>
           <AppText variant="caption" muted>
             {formatDateTime(item.created_at)}
           </AppText>
@@ -92,6 +92,7 @@ function HistoryItem({ item }: { item: SentMessageDto }) {
 export default function HistoryScreen() {
   const router = useRouter();
   const history = useAppStore((s) => s.history);
+  const linkedTargets = useAppStore((s) => s.linkedTargets);
   const loadHistory = useAppStore((s) => s.loadHistory);
 
   useFocusEffect(
@@ -99,6 +100,11 @@ export default function HistoryScreen() {
       void loadHistory();
     }, [loadHistory]),
   );
+
+  const labelFor = (item: SentMessageDto): string => {
+    const target = linkedTargets.find((t) => t.device_id === item.target_device_id);
+    return target ? targetLabel(target) : item.target_device_name;
+  };
 
   return (
     <Screen title="Historique" onBack={() => router.back()}>
@@ -110,7 +116,9 @@ export default function HistoryScreen() {
             </AppText>
           </Card>
         ) : (
-          history.map((item) => <HistoryItem key={item.id} item={item} />)
+          history.map((item) => (
+            <HistoryItem key={item.id} item={item} title={labelFor(item)} />
+          ))
         )}
       </ScrollView>
     </Screen>
