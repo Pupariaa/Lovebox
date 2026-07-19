@@ -57,10 +57,31 @@ function matchesBox(device: Device): boolean {
   return NAME_HINTS.some((hint) => name.includes(hint));
 }
 
+const PROVISION_CANCELLED = "provisioning cancelled";
+
 export class BleProvisioner {
   private manager = new BleManager();
   private device: Device | null = null;
   private identity: BleBoxIdentity | null = null;
+  private connectingAddress: string | null = null;
+  private cancelled = false;
+  private wifiResultAbort: (() => void) | null = null;
+
+  resetAbort(): void {
+    this.cancelled = false;
+  }
+
+  async cancel(): Promise<void> {
+    this.cancelled = true;
+    this.manager.stopDeviceScan();
+    if (this.wifiResultAbort) this.wifiResultAbort();
+    const address = this.device?.id ?? this.connectingAddress;
+    this.device = null;
+    this.connectingAddress = null;
+    if (address) {
+      await this.manager.cancelDeviceConnection(address).catch(() => undefined);
+    }
+  }
 
   async ensurePoweredOn(timeoutMs = 8000): Promise<void> {
     const state = await this.manager.state();
@@ -115,13 +136,22 @@ export class BleProvisioner {
   }
 
   async connect(address: string, deviceName: string): Promise<void> {
-    const device = await this.manager.connectToDevice(address, { timeout: 30000 });
-    await device.discoverAllServicesAndCharacteristics();
-    this.device = device;
-    this.identity = await this.readIdentity(device, deviceName);
-    const { saveStoredBleDevice } = await import("@/data/storage/bleDeviceStorage");
-    await saveStoredBleDevice(this.identity?.deviceName ?? deviceName, address);
-    await delay(600);
+    this.connectingAddress = address;
+    try {
+      const device = await this.manager.connectToDevice(address, { timeout: 30000 });
+      if (this.cancelled) {
+        await this.manager.cancelDeviceConnection(address).catch(() => undefined);
+        throw new Error(PROVISION_CANCELLED);
+      }
+      await device.discoverAllServicesAndCharacteristics();
+      this.device = device;
+      this.identity = await this.readIdentity(device, deviceName);
+      const { saveStoredBleDevice } = await import("@/data/storage/bleDeviceStorage");
+      await saveStoredBleDevice(this.identity?.deviceName ?? deviceName, address);
+      await delay(600);
+    } finally {
+      this.connectingAddress = null;
+    }
   }
 
   private async readIdentity(device: Device, fallbackName: string): Promise<BleBoxIdentity | null> {
@@ -169,6 +199,10 @@ export class BleProvisioner {
   }
 
   async sendWifiCredentials(ssid: string, password: string): Promise<void> {
+    console.log("sending wifi credentials over BLE", {
+      ssid,
+      passwordLength: password.length,
+    });
     await this.writeChar(AppConfig.BLE_WIFI_CHAR_UUID, `${ssid}|${password}`, 127);
     await delay(250);
   }
@@ -215,9 +249,15 @@ export class BleProvisioner {
         clearTimeout(timer);
         clearInterval(poll);
         subscription?.remove();
+        this.wifiResultAbort = null;
         if (error) reject(error);
         else resolve(value ?? false);
       };
+
+      this.wifiResultAbort = () => finish(null, new Error(PROVISION_CANCELLED));
+
+      const failFrom = (error: unknown) =>
+        finish(null, error instanceof Error ? error : new Error(String(error)));
 
       const handleStatus = async (status: number) => {
         if (status === BleProvStatus.FAIL) {
@@ -238,20 +278,21 @@ export class BleProvisioner {
             finish(null, error);
             return;
           }
-          if (char?.value) void handleStatus(base64ToFirstByte(char.value));
+          if (char?.value) handleStatus(base64ToFirstByte(char.value)).catch(failFrom);
         },
       );
 
-      const poll = setInterval(async () => {
-        try {
-          const char = await device.readCharacteristicForService(
+      const poll = setInterval(() => {
+        device
+          .readCharacteristicForService(
             AppConfig.BLE_SERVICE_UUID,
             AppConfig.BLE_WIFI_STATUS_CHAR_UUID,
-          );
-          if (char.value) await handleStatus(base64ToFirstByte(char.value));
-        } catch {
-          // ignore transient read errors while polling
-        }
+          )
+          .then((char) => {
+            if (char.value) return handleStatus(base64ToFirstByte(char.value));
+            return undefined;
+          })
+          .catch(() => undefined);
       }, 400);
     });
   }
@@ -263,9 +304,10 @@ export class BleProvisioner {
         AppConfig.BLE_SERVICE_UUID,
         AppConfig.BLE_WIFI_STATUS_CHAR_UUID,
       );
-      return char.value ? base64ToFirstByte(char.value) === BleProvStatus.OK : true;
-    } catch {
-      return true;
+      return char.value ? base64ToFirstByte(char.value) === BleProvStatus.OK : false;
+    } catch (error) {
+      console.warn("wifi status confirmation read failed", error);
+      return false;
     }
   }
 
