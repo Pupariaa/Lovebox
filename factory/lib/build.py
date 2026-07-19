@@ -20,6 +20,7 @@ from .config import (
 )
 from .ffat import build_ffat_image as build_wl_ffat_image
 from .nvs_image import build_nvs_image
+from .arduino_usbcdc_patch import apply_usbcdc_patch
 
 
 def read_version() -> str:
@@ -83,6 +84,7 @@ def find_lucarne() -> Path | None:
 
 def compile_sketch(version: str) -> None:
     cli = find_arduino_cli()
+    apply_usbcdc_patch()
     original = patch_firmware_version(version)
     try:
         cmd = [
@@ -183,6 +185,10 @@ def read_flash_params() -> dict[str, str]:
 def flash_firmware_only(port: str, firmware: Path) -> None:
     esptool = find_esptool()
     flash = read_flash_params()
+    # boot_app0 resets the otadata partition so the bootloader boots ota_0 (the slot
+    # we flash at 0x10000). Without it, a device that previously ran an OTA boots the
+    # OTHER app slot (ota_1) and silently ignores this fresh firmware.
+    boot_app0 = resolve_boot_app0()
     args = [
         str(esptool),
         "--chip",
@@ -203,6 +209,8 @@ def flash_firmware_only(port: str, firmware: Path) -> None:
         flash["freq"],
         "--flash-size",
         flash["size"],
+        "0xe000",
+        str(boot_app0),
         "0x10000",
         str(firmware),
     ]
