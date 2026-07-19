@@ -11,10 +11,12 @@
 #include "BacSha256.h"
 #include "BacTls.h"
 #include "BacUrlFailover.h"
+#include "BacWatchdog.h"
 
 struct BacOta {
     typedef void (*ProgressFn)(void *ctx, int percent);
     static constexpr size_t kBufSize = 8192;
+    static constexpr uint32_t kDownloadTimeoutMs = 300000;
 
     static bool installFromUrl(const char *url, uint32_t expectedSize, const char *expectedSha256,
                                ProgressFn progress, void *ctx, bool *shaMismatch = nullptr) {
@@ -47,6 +49,7 @@ struct BacOta {
                 http.end();
                 continue;
             }
+            Update.abort();
             if (!Update.begin((size_t)len)) {
                 BacDebug::eventf("ota", "begin failed err=%u", (unsigned)Update.getError());
                 http.end();
@@ -57,7 +60,15 @@ struct BacOta {
             size_t total = 0;
             BacSha256 sha;
             sha.begin();
+            uint32_t startMs = millis();
+            bool timedOut = false;
             while (http.connected() && total < (size_t)len) {
+                BacWatchdog::feed();
+                if (millis() - startMs > kDownloadTimeoutMs) {
+                    BacDebug::event("ota", "download timeout");
+                    timedOut = true;
+                    break;
+                }
                 size_t avail = stream->available();
                 if (avail == 0) {
                     delay(1);
@@ -80,7 +91,7 @@ struct BacOta {
                 }
             }
             http.end();
-            if (total != (size_t)len) {
+            if (timedOut || total != (size_t)len) {
                 Update.abort();
                 continue;
             }
