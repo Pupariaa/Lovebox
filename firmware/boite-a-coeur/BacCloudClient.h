@@ -14,13 +14,15 @@
 #include "BacFirmware.h"
 #include "BacDebug.h"
 #include "BacTls.h"
+#include "BacUrlFailover.h"
 #include "BacMessageStore.h"
 
 class BacCloudClient {
 public:
     static const uint32_t POLL_TIMEOUT_SEC = 25;
     static const uint32_t HTTP_TIMEOUT_MS = 32000;
-    static const size_t MAX_MSG = 2097152;
+    static const uint32_t HEARTBEAT_INTERVAL_MS = 60000;
+    static const size_t MAX_MSG = 3145728;
 
     class PollBodyStream : public Stream {
     public:
@@ -161,6 +163,25 @@ public:
         return code == 200;
     }
 
+    // Synchronous self-deletion: called at the very end of a factory reset while WiFi and the device
+    // secret are still valid, so the backend can drop this device row (cascade removes pairings and
+    // messages) before local credentials are wiped.
+    bool deregisterDevice() {
+        if (!_config || !_config->apiSecret.length()) return false;
+        String url = apiBase() + "/api/v1/devices/deregister";
+        WiFiClientSecure client;
+        BacTls::configure(client);
+        HTTPClient http;
+        http.setTimeout(8000);
+        if (!http.begin(client, url)) return false;
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("X-Device-Uuid", _config->uuid);
+        http.addHeader("X-Device-Secret", _config->apiSecret);
+        int code = http.POST((uint8_t *)"{}", 2);
+        http.end();
+        return code >= 200 && code < 300;
+    }
+
     static String unescapeJsonString(const String &s) {
         String out;
         out.reserve(s.length());
@@ -282,6 +303,33 @@ private:
     volatile bool _registeredOk = false;
     volatile bool _otaHold = false;
     volatile bool _messageHold = false;
+    uint32_t _lastHeartbeatMs = 0;
+    mutable uint8_t _apiBaseIndex = 0;
+
+    String apiBaseAt(uint8_t index) const {
+        if (!_config) return BacUrlFailover::defaultHost(0);
+        String bases[BacUrlFailover::kHostCount];
+        bases[0] = _config->apiUrl.length() ? _config->apiUrl : BacUrlFailover::defaultHost(0);
+        bases[1] = _config->apiUrlB1.length() ? _config->apiUrlB1 : BacUrlFailover::defaultHost(1);
+        bases[2] = _config->apiUrlB2.length() ? _config->apiUrlB2 : BacUrlFailover::defaultHost(2);
+        if (index >= BacUrlFailover::kHostCount) index = 0;
+        return bases[index];
+    }
+
+    void noteApiFailure() {
+        if (_apiBaseIndex + 1 < BacUrlFailover::kHostCount) {
+            _apiBaseIndex++;
+            return;
+        }
+        _apiBaseIndex = 0;
+    }
+
+    void noteApiSuccess() {
+        if (!_config || _apiBaseIndex == 0) return;
+        _config->apiUrl = apiBaseAt(_apiBaseIndex);
+        _apiBaseIndex = 0;
+        _config->save();
+    }
 
     static void taskEntry(void *arg) {
         static_cast<BacCloudClient *>(arg)->taskLoop();
@@ -336,14 +384,18 @@ private:
                 vTaskDelay(pdMS_TO_TICKS(1000));
                 continue;
             }
+            if (_lastHeartbeatMs == 0 || (millis() - _lastHeartbeatMs) >= HEARTBEAT_INTERVAL_MS) {
+                sendHeartbeat();
+                _lastHeartbeatMs = millis();
+            }
             pollCommandsOnce();
             pollOnce();
+            pollCommandsOnce();
         }
     }
 
     String apiBase() const {
-        if (_config && _config->apiUrl.length()) return _config->apiUrl;
-        return "https://boite-a-coeur.techalchemy.fr";
+        return apiBaseAt(_apiBaseIndex);
     }
 
     bool registerDevice() {
@@ -383,7 +435,19 @@ private:
         body += "}";
         int code = http.POST(body);
         String resp = http.getString();
+        if (!BacUrlFailover::httpOk(code)) {
+            noteApiFailure();
+            http.end();
+            url = apiBase() + "/api/v1/devices/register";
+            if (!http.begin(client, url)) return false;
+            http.addHeader("Content-Type", "application/json");
+            http.addHeader("X-Device-Uuid", _config->uuid);
+            if (_config->apiSecret.length()) http.addHeader("X-Device-Secret", _config->apiSecret);
+            code = http.POST(body);
+            resp = http.getString();
+        }
         http.end();
+        if (BacUrlFailover::httpOk(code)) noteApiSuccess();
         if (code != 200) {
             String err = extractJsonString(resp, "error");
             if (err.length()) BAC_LOGF("cloud", "register %d: %s", code, err.c_str());
@@ -580,6 +644,48 @@ private:
         http.end();
     }
 
+    void sendHeartbeat() {
+        if (!_config || !_config->apiSecret.length()) return;
+        String url = apiBase() + "/api/v1/devices/heartbeat";
+        WiFiClientSecure client;
+        BacTls::configure(client);
+        HTTPClient http;
+        http.setTimeout(8000);
+        if (!http.begin(client, url)) return;
+        http.addHeader("Content-Type", "application/json");
+        http.addHeader("X-Device-Uuid", _config->uuid);
+        http.addHeader("X-Device-Secret", _config->apiSecret);
+        uint8_t mac[6];
+        WiFi.macAddress(mac);
+        char macBuf[18];
+        snprintf(macBuf, sizeof(macBuf), "%02X:%02X:%02X:%02X:%02X:%02X",
+                 mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
+        String body = "{\"firmware_version\":\"";
+        body += BAC_FW_VERSION;
+        body += "\",\"rssi\":";
+        body += String(WiFi.RSSI());
+        body += ",\"free_heap\":";
+        body += String((uint32_t)ESP.getFreeHeap());
+        body += ",\"uptime_s\":";
+        body += String((uint32_t)(millis() / 1000));
+        body += ",\"ip\":\"";
+        body += jsonEscape(WiFi.localIP().toString());
+        body += "\",\"mac\":\"";
+        body += macBuf;
+        body += "\"}";
+        int code = http.POST(body);
+        String resp = http.getString();
+        if (code >= 200 && code <= 299) {
+            String otaPayload = extractJsonObject(resp, "firmware_update");
+            if (otaPayload.length() && _otaOfferHandler && _config->claimed) {
+                _otaOfferHandler(_otaOfferHandlerCtx, otaPayload.c_str());
+            }
+        } else {
+            BacDebug::eventf("cloud", "heartbeat failed http %d", code);
+        }
+        http.end();
+    }
+
     static String jsonEscape(const String &s) {
         String out;
         out.reserve(s.length() + 8);
@@ -610,6 +716,7 @@ public:
     void setOtaHold(bool) {}
     bool ackCommand(uint32_t) { return false; }
     bool failCommand(uint32_t) { return false; }
+    bool deregisterDevice() { return false; }
 };
 
 #endif
