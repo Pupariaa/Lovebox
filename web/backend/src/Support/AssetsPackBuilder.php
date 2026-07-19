@@ -27,8 +27,6 @@ final class AssetsPackBuilder
             $full = str_replace('\\', '/', $file->getPathname());
             $rel = substr($full, strlen($assetsDir) + 1);
             $path = '/assets/' . $rel;
-            // Skip control dotfiles (.manifest, .ok) that may be present when packing
-            // from an on-device data directory; they are managed separately by the device.
             if (str_starts_with(basename($path), '.')) {
                 continue;
             }
@@ -48,9 +46,6 @@ final class AssetsPackBuilder
         fwrite($fp, self::MAGIC);
         fwrite($fp, pack('V', 1));
         fwrite($fp, pack('V', count($files)));
-        // Track each record's byte offset (start of its pathLen field) and data sha so a
-        // sidecar manifest lets the device diff-sync: records are written back-to-back, so
-        // a run of consecutive changed files is one contiguous byte range in the pack.
         $offset = 12;
         $manifest = [];
         foreach ($files as $entry) {
@@ -134,6 +129,14 @@ final class AssetsPackBuilder
             throw new \RuntimeException('temp mkdir failed');
         }
 
+        $sandbox = realpath($tmpdir);
+        if ($sandbox === false) {
+            $zip->close();
+            self::removeTree($tmpdir);
+            throw new \RuntimeException('temp sandbox unavailable');
+        }
+        $sandboxPrefix = rtrim(str_replace('\\', '/', $sandbox), '/') . '/';
+
         try {
             for ($i = 0; $i < $zip->numFiles; $i++) {
                 $name = str_replace('\\', '/', (string) $zip->getNameIndex($i));
@@ -146,16 +149,57 @@ final class AssetsPackBuilder
                 if (!str_starts_with($name, 'assets/')) {
                     throw new \InvalidArgumentException('zip must contain only assets/ files');
                 }
-            }
+                if (self::hasTraversal($name)) {
+                    throw new \InvalidArgumentException('unsafe zip entry: ' . $name);
+                }
 
-            if (!$zip->extractTo($tmpdir)) {
-                throw new \RuntimeException('zip extract failed');
+                $target = $sandbox . '/' . $name;
+                $targetDir = dirname($target);
+                if (!is_dir($targetDir) && !mkdir($targetDir, 0700, true) && !is_dir($targetDir)) {
+                    throw new \RuntimeException('zip extract mkdir failed');
+                }
+                $realTargetDir = realpath($targetDir);
+                if ($realTargetDir === false
+                    || !self::isInsideSandbox(str_replace('\\', '/', $realTargetDir) . '/', $sandboxPrefix)) {
+                    throw new \InvalidArgumentException('unsafe zip entry: ' . $name);
+                }
+
+                $stream = $zip->getStream($name);
+                if ($stream === false) {
+                    throw new \RuntimeException('zip stream failed');
+                }
+                $out = fopen($target, 'wb');
+                if ($out === false) {
+                    fclose($stream);
+                    throw new \RuntimeException('zip write failed');
+                }
+                stream_copy_to_stream($stream, $out);
+                fclose($stream);
+                fclose($out);
             }
             $zip->close();
-            return self::buildFromAssetsDirectory($tmpdir . '/assets', $outputPath);
+            return self::buildFromAssetsDirectory($sandbox . '/assets', $outputPath);
         } finally {
             self::removeTree($tmpdir);
         }
+    }
+
+    private static function hasTraversal(string $name): bool
+    {
+        if (str_contains($name, '..')) {
+            foreach (explode('/', $name) as $segment) {
+                if ($segment === '..') {
+                    return true;
+                }
+            }
+        }
+        return str_starts_with($name, '/');
+    }
+
+    private static function isInsideSandbox(string $resolvedDirWithSlash, string $sandboxPrefix): bool
+    {
+        return $resolvedDirWithSlash === $sandboxPrefix
+            || str_starts_with($resolvedDirWithSlash, $sandboxPrefix);
     }
 
     private static function isSafeAssetPath(string $path): bool
