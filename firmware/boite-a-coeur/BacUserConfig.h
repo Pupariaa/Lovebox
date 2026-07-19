@@ -10,6 +10,8 @@
 struct BacUserConfig {
     static constexpr const char *kNvsNs = "bac";
     static constexpr const char *kNvsInitKey = "nvs_init";
+    static constexpr const char *kSecretNs = "bacsec";
+    static constexpr const char *kSecretKey = "api_secret";
 
     String deviceName;
     String factoryDeviceName;
@@ -75,7 +77,9 @@ struct BacUserConfig {
         bool hasNvs = prefs.getBool(kNvsInitKey, false);
         if (hasNvs) {
             loadFromPrefs(prefs);
+            String legacySecret = prefs.getString("api_secret", "");
             prefs.end();
+            loadSecret(legacySecret);
             applyDefaults();
             return true;
         }
@@ -103,7 +107,7 @@ struct BacUserConfig {
         prefs.putString("api_url", apiUrl);
         prefs.putString("api_url_b1", apiUrlB1);
         prefs.putString("api_url_b2", apiUrlB2);
-        prefs.putString("api_secret", apiSecret);
+        prefs.remove("api_secret");
         prefs.putString("region", region);
         prefs.putString("locale", locale.length() ? locale : "fr");
         prefs.putString("build_year", buildYear);
@@ -117,10 +121,31 @@ struct BacUserConfig {
         if (tzOffsetValid) prefs.putInt("tz_offset", tzOffsetSec);
         else prefs.remove("tz_offset");
         prefs.end();
+        saveSecret();
         return true;
     }
 
 private:
+    void saveSecret() const {
+        Preferences sec;
+        if (!sec.begin(kSecretNs, false)) return;
+        if (apiSecret.length()) sec.putString(kSecretKey, apiSecret);
+        else sec.remove(kSecretKey);
+        sec.end();
+    }
+
+    void loadSecret(const String &legacy) {
+        Preferences sec;
+        if (sec.begin(kSecretNs, true)) {
+            apiSecret = sec.getString(kSecretKey, "");
+            sec.end();
+        }
+        if (apiSecret.length() == 0 && legacy.length() > 0) {
+            apiSecret = legacy;
+            save();
+        }
+    }
+
     void resetFields() {
         deviceName = "";
         factoryDeviceName = "";
@@ -168,7 +193,6 @@ private:
         apiUrl = prefs.getString("api_url", "");
         apiUrlB1 = prefs.getString("api_url_b1", "");
         apiUrlB2 = prefs.getString("api_url_b2", "");
-        apiSecret = prefs.getString("api_secret", "");
         region = prefs.getString("region", "");
         locale = prefs.getString("locale", "fr");
         buildYear = prefs.getString("build_year", "");
