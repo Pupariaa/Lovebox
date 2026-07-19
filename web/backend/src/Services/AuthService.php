@@ -9,11 +9,15 @@ use Bac\Support\TokenUtil;
 
 final class AuthService
 {
+    private bool $requireEmailVerification;
+
     public function __construct(
         private UserRepository $users,
         private JwtService $jwt,
         private EmailService $email
     ) {
+        $settings = require dirname(__DIR__, 2) . '/config/settings.php';
+        $this->requireEmailVerification = (bool) ($settings['auth']['require_email_verification'] ?? false);
     }
 
     public function register(string $email, string $password, string $firstName = ''): array
@@ -41,7 +45,7 @@ final class AuthService
             $firstName
         );
         $this->email->sendVerification($email, $verifyToken);
-        return $this->issueTokens($userId, $email, $firstName);
+        return $this->issueTokens($userId, $email, $firstName, false);
     }
 
     public function login(string $email, string $password): array
@@ -51,7 +55,11 @@ final class AuthService
         if (!$user || !password_verify($password, $user['password_hash'])) {
             throw new \InvalidArgumentException('invalid credentials');
         }
-        return $this->issueTokens((int) $user['id'], $user['email'], $user['first_name'] ?? null);
+        $emailVerified = !empty($user['email_verified_at']);
+        if ($this->requireEmailVerification && !$emailVerified) {
+            throw new \InvalidArgumentException('email_not_verified');
+        }
+        return $this->issueTokens((int) $user['id'], $user['email'], $user['first_name'] ?? null, $emailVerified);
     }
 
     public function refresh(string $refreshToken): array
@@ -66,7 +74,7 @@ final class AuthService
             throw new \InvalidArgumentException('user not found');
         }
         $this->users->revokeRefreshToken($hash);
-        return $this->issueTokens((int) $user['id'], $user['email'], $user['first_name'] ?? null);
+        return $this->issueTokens((int) $user['id'], $user['email'], $user['first_name'] ?? null, !empty($user['email_verified_at']));
     }
 
     public function logout(string $refreshToken): void
@@ -110,7 +118,7 @@ final class AuthService
         return true;
     }
 
-    private function issueTokens(int $userId, string $email, ?string $firstName = null): array
+    private function issueTokens(int $userId, string $email, ?string $firstName = null, bool $emailVerified = false): array
     {
         $refresh = TokenUtil::randomHex(32);
         $expiresAt = date('Y-m-d H:i:s', time() + $this->jwt->refreshTtl());
@@ -123,6 +131,7 @@ final class AuthService
                 'id' => $userId,
                 'email' => $email,
                 'first_name' => $firstName,
+                'email_verified' => $emailVerified,
             ],
         ];
     }
