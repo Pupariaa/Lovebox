@@ -15,6 +15,8 @@ static const lucarne::ImageAsset Ico_glyphs_arrow_solid_bracket_start_w_w_mr2y5d
 static const lucarne::ImageAsset Ico_glyphs_arrow_solid_bracket_start_w_w_mr2y8ozbc_img = { nullptr, nullptr, 32, 32, lucarne::ImageStorage::Volume, "/assets/icons/glyphs_arrow_solid_bracket_start_w_w_mr2y8ozbc/s.rgb565" };
 // glyphs:spinner-2@w:w_mrbesk3hb (volume)
 static const lucarne::ImageAsset Ico_glyphs_spinner_2_w_w_mrbesk3hb_img = { nullptr, nullptr, 32, 32, lucarne::ImageStorage::Volume, "/assets/icons/glyphs_spinner_2_w_w_mrbesk3hb/s.rgb565" };
+// glyphs:monitor@w:w_mrbusmon1 (volume)
+static const lucarne::ImageAsset Ico_glyphs_monitor_w_w_mrbusmon1_img = { nullptr, nullptr, 32, 32, lucarne::ImageStorage::Volume, "/assets/icons/glyphs_monitor_w_w_mrbusmon1/s.rgb565" };
 // glyphs:arrow-solid-bracket-start@w:w_mr2y7ru6d (volume)
 static const lucarne::ImageAsset Ico_glyphs_arrow_solid_bracket_start_w_w_mr2y7ru6d_img = { nullptr, nullptr, 32, 32, lucarne::ImageStorage::Volume, "/assets/icons/glyphs_arrow_solid_bracket_start_w_w_mr2y7ru6d/s.rgb565" };
 // glyphs:cog
@@ -25874,6 +25876,7 @@ inline const lucarne::ImageAsset *iconImageByRef(const char *name) {
     if (strcmp(name, "glyphs:arrow-solid-bracket-start@w:w_mr2y5dupb") == 0) return &Ico_glyphs_arrow_solid_bracket_start_w_w_mr2y5dupb_img;
     if (strcmp(name, "glyphs:arrow-solid-bracket-start@w:w_mr2y8ozbc") == 0) return &Ico_glyphs_arrow_solid_bracket_start_w_w_mr2y8ozbc_img;
     if (strcmp(name, "glyphs:spinner-2@w:w_mrbesk3hb") == 0) return &Ico_glyphs_spinner_2_w_w_mrbesk3hb_img;
+    if (strcmp(name, "glyphs:monitor@w:w_mrbusmon1") == 0) return &Ico_glyphs_monitor_w_w_mrbusmon1_img;
     if (strcmp(name, "glyphs:arrow-solid-bracket-start@w:w_mr2y7ru6d") == 0) return &Ico_glyphs_arrow_solid_bracket_start_w_w_mr2y7ru6d_img;
     if (strcmp(name, "glyphs:cog") == 0) return &Ico_glyphs_cog_img;
     if (strcmp(name, "glyphs:arrows-round") == 0) return &Ico_glyphs_arrows_round_img;
