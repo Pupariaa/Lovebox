@@ -1,0 +1,18 @@
+device_name: BaCxs32c2333
+factory_device_name: BaCxs32c2333
+display_name: BaCxs32c2333
+serial_number: BACXS32C23332026R2
+ssid:
+psw:
+configured: 0
+uuid: 47696808233749760994937084768920328262027978663065129904099588593513965233091311661605080424393830253181286855848804979632015429
+locale: fr
+build_year: 2026
+build_semester: 2
+hw_revision: BaC-S3-v1
+api_url: https://boite-a-coeur.fr
+api_url_b1: https://update.bac-tcy.com
+api_url_b2: https://update.tcy-services.com
+api_secret:
+region:
+old_boot_status:
