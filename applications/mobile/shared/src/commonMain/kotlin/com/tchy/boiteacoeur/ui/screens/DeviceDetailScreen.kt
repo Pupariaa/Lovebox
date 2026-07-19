@@ -59,7 +59,7 @@ fun DeviceDetailScreen(
 
             Button(
                 onClick = { vm.unclaimDevice(device.id, onBack) },
-                enabled = !vm.loading,
+                enabled = !vm.unclaiming,
                 modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(containerColor = WineAccent),
             ) {
