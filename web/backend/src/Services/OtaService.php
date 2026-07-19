@@ -39,16 +39,36 @@ final class OtaService
     public function buildPayload(array $release): array
     {
         $base = rtrim((string) ($this->settings['ota']['public_url'] ?? ''), '/');
+        $backups = $this->settings['ota']['backup_urls'] ?? [];
+        $verPath = rawurlencode($release['version']);
         $payload = [
             'version' => $release['version'],
-            'url' => $base . '/updates/' . rawurlencode($release['version']) . '/firmware.bin',
+            'url' => $base . '/updates/' . $verPath . '/firmware.bin',
             'sha256' => $release['firmware_sha256'],
             'size' => (int) $release['firmware_size'],
         ];
+        foreach ($backups as $index => $backupBase) {
+            $backupBase = rtrim((string) $backupBase, '/');
+            if ($backupBase === '') {
+                continue;
+            }
+            $suffix = $index === 0 ? '_b1' : '_b2';
+            $payload['url' . $suffix] = $backupBase . '/updates/' . $verPath . '/firmware.bin';
+        }
         if (!empty($release['assets_file'])) {
-            $payload['assets_url'] = $base . '/updates/' . rawurlencode($release['version']) . '/assets.bacassets';
+            $payload['assets_url'] = $base . '/updates/' . $verPath . '/assets.bacassets';
             $payload['assets_sha256'] = $release['assets_sha256'];
             $payload['assets_size'] = (int) $release['assets_size'];
+            $payload['assets_manifest_url'] = $base . '/updates/' . $verPath . '/assets.manifest';
+            foreach ($backups as $index => $backupBase) {
+                $backupBase = rtrim((string) $backupBase, '/');
+                if ($backupBase === '') {
+                    continue;
+                }
+                $suffix = $index === 0 ? '_b1' : '_b2';
+                $payload['assets_url' . $suffix] = $backupBase . '/updates/' . $verPath . '/assets.bacassets';
+                $payload['assets_manifest_url' . $suffix] = $backupBase . '/updates/' . $verPath . '/assets.manifest';
+            }
         }
         return $payload;
     }
@@ -196,7 +216,7 @@ final class OtaService
         return $this->buildPayload($release);
     }
 
-    public function publish(int $releaseId): array
+    public function publish(int $releaseId, bool $notifyFleet = true): array
     {
         $release = $this->releases->findById($releaseId);
         if (!$release) {
@@ -205,9 +225,10 @@ final class OtaService
         if (!$this->releases->publish($releaseId)) {
             throw new \InvalidArgumentException('publish failed');
         }
-        $enqueued = $this->notifyEligibleDevices($release);
+        $release = $this->releases->findById($releaseId);
+        $enqueued = $notifyFleet ? $this->notifyEligibleDevices($release) : 0;
         return [
-            'release' => $this->formatRelease($this->releases->findById($releaseId)),
+            'release' => $this->formatRelease($release),
             'devices_notified' => $enqueued,
         ];
     }
