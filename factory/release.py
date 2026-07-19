@@ -28,8 +28,10 @@ def zip_assets(output: Path) -> Path:
     output.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(output, "w", compression=zipfile.ZIP_DEFLATED) as zf:
         for path in sorted(ASSETS_DIR.rglob("*")):
-            if path.is_file():
-                zf.write(path, path.relative_to(ASSETS_DIR).as_posix())
+            if not path.is_file() or path.name.startswith("."):
+                continue
+            rel = path.relative_to(ASSETS_DIR).as_posix()
+            zf.write(path, f"assets/{rel}")
     return output
 
 
