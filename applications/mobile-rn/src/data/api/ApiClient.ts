@@ -9,6 +9,7 @@ import type {
   PairingStateResponse,
   PreviewResponse,
   SendMessageResponse,
+  ReceivedMessagesResponse,
   SentMessagesResponse,
   UserProfileDto,
   UserProfileResponse,
@@ -39,10 +40,15 @@ function jsonInit(method: string, body?: JsonBody, token?: string): RequestInit 
   };
 }
 
-async function postAuth(path: string, email: string, password: string): Promise<AuthResponse> {
+async function postAuth(
+  path: string,
+  email: string,
+  password: string,
+  extra?: JsonBody,
+): Promise<AuthResponse> {
   const body = await requestJson<AuthResponse>(
     path,
-    jsonInit("POST", { email: email.trim(), password }),
+    jsonInit("POST", { email: email.trim(), password, ...extra }),
   );
   await persistTokens(body);
   return body;
@@ -57,8 +63,14 @@ export async function login(email: string, password: string): Promise<AuthRespon
   return postAuth("/api/v1/auth/login", email, password);
 }
 
-export async function register(email: string, password: string): Promise<AuthResponse> {
-  return postAuth("/api/v1/auth/register", email, password);
+export async function register(
+  email: string,
+  password: string,
+  firstName: string,
+): Promise<AuthResponse> {
+  return postAuth("/api/v1/auth/register", email, password, {
+    first_name: firstName.trim(),
+  });
 }
 
 export async function requestPasswordReset(email: string): Promise<void> {
@@ -70,7 +82,7 @@ export async function requestPasswordReset(email: string): Promise<void> {
 
 export async function refresh(): Promise<AuthResponse> {
   const refreshToken = tokenStorage.getRefreshToken();
-  if (!refreshToken) throw new ApiException("Session expiree", 401);
+  if (!refreshToken) throw new ApiException("Session expirée.", 401);
   const body = await requestJson<AuthResponse>(
     "/api/v1/auth/refresh",
     jsonInit("POST", { refresh_token: refreshToken }),
@@ -103,7 +115,7 @@ export async function clearLocalSession(): Promise<void> {
 
 async function authRequest<T>(block: (token: string) => Promise<T>): Promise<T> {
   let token = tokenStorage.getAccessToken();
-  if (!token) throw new ApiException("Non connecte", 401);
+  if (!token) throw new ApiException("Non connecté.", 401);
   try {
     return await block(token);
   } catch (e) {
@@ -115,7 +127,7 @@ async function authRequest<T>(block: (token: string) => Promise<T>): Promise<T> 
       throw refreshError;
     }
     token = tokenStorage.getAccessToken();
-    if (!token) throw new ApiException("Session expiree", 401);
+    if (!token) throw new ApiException("Session expirée.", 401);
     return block(token);
   }
 }
@@ -140,12 +152,26 @@ export async function getMyDevice(): Promise<DeviceMeResponse> {
 
 export async function updateDevice(
   deviceId: number,
-  displayName: string | null,
-  regionOverride: string | null,
+  patch: {
+    displayName?: string | null;
+    regionOverride?: string | null;
+    locale?: string | null;
+    backlightLevel?: number;
+    sleepTimeoutSec?: number;
+    displaySleepEnabled?: boolean;
+  },
 ): Promise<DeviceUpdateResponse> {
   const body: JsonBody = {};
-  if (displayName !== null) body.display_name = displayName;
-  if (regionOverride !== null) body.region_override = regionOverride;
+  if (patch.displayName !== undefined && patch.displayName !== null) body.display_name = patch.displayName;
+  if (patch.regionOverride !== undefined && patch.regionOverride !== null) {
+    body.region_override = patch.regionOverride;
+  }
+  if (patch.locale !== undefined && patch.locale !== null) {
+    body.locale = patch.locale;
+  }
+  if (patch.backlightLevel !== undefined) body.backlight_level = patch.backlightLevel;
+  if (patch.sleepTimeoutSec !== undefined) body.sleep_timeout_s = patch.sleepTimeoutSec;
+  if (patch.displaySleepEnabled !== undefined) body.display_sleep_enabled = patch.displaySleepEnabled;
   return authRequest((token) =>
     requestJson<DeviceUpdateResponse>(
       `/api/v1/devices/${deviceId}`,
@@ -158,6 +184,15 @@ export async function unclaimDevice(deviceId: number): Promise<void> {
   await authRequest((token) =>
     requestJson<{ ok: boolean }>(
       `/api/v1/devices/${deviceId}/claim`,
+      jsonInit("DELETE", undefined, token),
+    ),
+  );
+}
+
+export async function deleteDevice(deviceId: number): Promise<void> {
+  await authRequest((token) =>
+    requestJson<{ ok: boolean }>(
+      `/api/v1/devices/${deviceId}`,
       jsonInit("DELETE", undefined, token),
     ),
   );
@@ -204,6 +239,18 @@ export async function unlinkPairing(pairingId: number): Promise<void> {
   );
 }
 
+export async function setPairingAlias(
+  pairingId: number,
+  alias: string | null,
+): Promise<PairingStateResponse> {
+  return authRequest((token) =>
+    requestJson<PairingStateResponse>(
+      `/api/v1/pairings/${pairingId}`,
+      jsonInit("PATCH", { alias: alias && alias.trim() ? alias.trim() : null }, token),
+    ),
+  );
+}
+
 export async function getUserProfile(): Promise<UserProfileDto> {
   return authRequest(async (token) => {
     const res = await requestJson<UserProfileResponse>(
@@ -229,6 +276,25 @@ export async function updateUserProfile(patch: {
     const res = await requestJson<UserProfileResponse>(
       "/api/v1/users/me",
       jsonInit("PATCH", body, token),
+    );
+    return res.user;
+  });
+}
+
+export async function migrateContactEmail(contactEmail: string): Promise<void> {
+  await authRequest((token) =>
+    requestJson<{ ok: boolean }>(
+      "/api/v1/users/me/migrate-email",
+      jsonInit("POST", { contact_email: contactEmail }, token),
+    ),
+  );
+}
+
+export async function setAccountPassword(password: string): Promise<UserProfileDto> {
+  return authRequest(async (token) => {
+    const res = await requestJson<UserProfileResponse>(
+      "/api/v1/users/me/set-password",
+      jsonInit("POST", { password }, token),
     );
     return res.user;
   });
@@ -264,6 +330,15 @@ export async function listSentMessages(page = 1): Promise<SentMessagesResponse> 
   return authRequest((token) =>
     requestJson<SentMessagesResponse>(
       `/api/v1/messages/sent?page=${page}`,
+      jsonInit("GET", undefined, token),
+    ),
+  );
+}
+
+export async function listReceivedMessages(page = 1): Promise<ReceivedMessagesResponse> {
+  return authRequest((token) =>
+    requestJson<ReceivedMessagesResponse>(
+      `/api/v1/messages/received?page=${page}`,
       jsonInit("GET", undefined, token),
     ),
   );
