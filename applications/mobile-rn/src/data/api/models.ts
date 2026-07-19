@@ -18,6 +18,13 @@ export type UserProfileDto = {
   last_name?: string | null;
   locale: string;
   email_verified: boolean;
+  oauth_providers?: string[];
+  has_password?: boolean;
+  email_is_private_relay?: boolean;
+  can_set_password?: boolean;
+  profile_complete?: boolean;
+  contact_email?: string | null;
+  contact_email_verified?: boolean;
 };
 
 export type UserProfileResponse = {
@@ -33,6 +40,7 @@ export type DeviceDto = {
   serial_number: string;
   region?: string | null;
   region_override?: string | null;
+  locale?: string | null;
   firmware_version?: string | null;
   last_seen_at?: string | null;
   last_seen_seconds_ago?: number | null;
@@ -64,6 +72,8 @@ export type LinkedTargetDto = {
   device_id: number;
   device_name: string;
   display_name: string;
+  alias?: string | null;
+  owner_first_name?: string | null;
   uuid: string;
   serial_number: string;
   relationship_type: string;
@@ -98,6 +108,7 @@ export type PairingCodeResponse = {
 export type SentMessageDto = {
   id: number;
   message_id: number;
+  target_device_id: number;
   target_device_name: string;
   preview_base64?: string | null;
   created_at: string;
@@ -112,6 +123,21 @@ export type SentMessagesResponse = {
   ok: boolean;
   items: SentMessageDto[];
   page: number;
+};
+
+export type ReceivedMessageDto = {
+  message_id: number;
+  device_name: string;
+  sender_first_name?: string | null;
+  preview_base64?: string | null;
+  opened_at?: string | null;
+  seen_at?: string | null;
+  created_at?: string | null;
+};
+
+export type ReceivedMessagesResponse = {
+  ok: boolean;
+  items: ReceivedMessageDto[];
 };
 
 export type SendMessageResponse = {
