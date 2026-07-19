@@ -55,6 +55,20 @@ final class PairingController
         }
     }
 
+    public function setAlias(Request $request, Response $response, array $args): Response
+    {
+        $userId = (int) $request->getAttribute('user_id');
+        $body = (array) $request->getParsedBody();
+        $aliasRaw = $body['alias'] ?? null;
+        $alias = $aliasRaw === null ? null : (string) $aliasRaw;
+        try {
+            $data = $this->pairings->setAlias($userId, (int) ($args['id'] ?? 0), $alias);
+            return JsonResponse::ok($response, ['ok' => true] + $data);
+        } catch (\InvalidArgumentException $e) {
+            return JsonResponse::error($response, $e->getMessage(), 400);
+        }
+    }
+
     public function me(Request $request, Response $response): Response
     {
         $userId = (int) $request->getAttribute('user_id');
