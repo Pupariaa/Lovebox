@@ -109,6 +109,71 @@ final class DeviceCommandRepository
         return (bool) $stmt->fetchColumn();
     }
 
+    public function listRecentForDevice(int $deviceId, int $limit = 10): array
+    {
+        $limit = max(1, min(50, $limit));
+        $stmt = $this->pdo->prepare(
+            "SELECT id, command_type, status, payload_json, created_at, delivered_at, acked_at
+             FROM device_commands
+             WHERE device_id = :did
+             ORDER BY created_at DESC
+             LIMIT $limit"
+        );
+        $stmt->execute(['did' => $deviceId]);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) {
+            $decoded = json_decode((string) ($row['payload_json'] ?? ''), true);
+            $row['payload'] = is_array($decoded) ? $decoded : [];
+            unset($row['payload_json']);
+        }
+        return $rows;
+    }
+
+    public function otaStats(int $recentHours = 24): array
+    {
+        $open = $this->pdo->query(
+            "SELECT status, COUNT(*) AS total
+             FROM device_commands
+             WHERE command_type = 'ota' AND status IN ('pending', 'delivered')
+             GROUP BY status"
+        )->fetchAll();
+        $pending = 0;
+        $delivered = 0;
+        foreach ($open as $row) {
+            if ($row['status'] === 'pending') {
+                $pending = (int) $row['total'];
+            } elseif ($row['status'] === 'delivered') {
+                $delivered = (int) $row['total'];
+            }
+        }
+        $recent = $this->pdo->prepare(
+            "SELECT status, COUNT(*) AS total
+             FROM device_commands
+             WHERE command_type = 'ota'
+               AND status IN ('acked', 'failed')
+               AND COALESCE(acked_at, delivered_at, created_at) >= DATE_SUB(NOW(), INTERVAL :h HOUR)
+             GROUP BY status"
+        );
+        $recent->execute(['h' => $recentHours]);
+        $acked = 0;
+        $failed = 0;
+        foreach ($recent->fetchAll() as $row) {
+            if ($row['status'] === 'acked') {
+                $acked = (int) $row['total'];
+            } elseif ($row['status'] === 'failed') {
+                $failed = (int) $row['total'];
+            }
+        }
+        return [
+            'pending' => $pending,
+            'delivered' => $delivered,
+            'in_flight' => $pending + $delivered,
+            'acked_recent' => $acked,
+            'failed_recent' => $failed,
+            'recent_hours' => $recentHours,
+        ];
+    }
+
     public function cancelOpenType(int $deviceId, string $type): int
     {
         $stmt = $this->pdo->prepare(
