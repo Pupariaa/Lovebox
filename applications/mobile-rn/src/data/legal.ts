@@ -1,5 +1,11 @@
 export type LegalParagraph = { title: string; body: string };
 
+export const PRIVACY_POLICY_URL = "https://boite-a-coeur.fr/privacy";
+export const TERMS_URL = "https://boite-a-coeur.fr/terms";
+export const LEGAL_NOTICE_URL = "https://boite-a-coeur.fr/legal";
+export const COOKIES_POLICY_URL = "https://boite-a-coeur.fr/cookies";
+export const DELETE_ACCOUNT_URL = "https://boite-a-coeur.fr/delete-me";
+
 export const LEGAL_SECTIONS: Record<
   string,
   { title: string; paragraphs: LegalParagraph[] }
@@ -8,20 +14,36 @@ export const LEGAL_SECTIONS: Record<
     title: "Conditions d'utilisation",
     paragraphs: [
       {
-        title: "Usage",
-        body: "En utilisant Boîte à cœur, tu t'engages à utiliser le service de manière respectueuse et légale.",
-      },
-      {
-        title: "Contenu",
-        body: "Tu es responsable du contenu des messages envoyés via ton compte.",
-      },
-      {
-        title: "Association",
-        body: "L'association d'une boîte à ton compte est personnelle. Ne partage pas tes codes de liaison publiquement.",
+        title: "Acceptation",
+        body: "En utilisant Boîte à Cœur (application, boîte connectée ou site), tu acceptes les conditions d'utilisation et la politique de confidentialité.",
       },
       {
         title: "Service",
-        body: "Le service est fourni en l'état. Nous pouvons faire évoluer les fonctionnalités ou suspendre un compte en cas d'abus manifeste.",
+        body: "Envoi de messages personnalisés vers des boîtes connectées autorisées. Fonctionnement soumis à une connexion Internet.",
+      },
+      {
+        title: "Compte",
+        body: "Tu es responsable de tes identifiants. Suppression de compte et dissociation des boîtes possibles depuis l'application.",
+      },
+      {
+        title: "Contenu",
+        body: "Tu es responsable des messages envoyés. Contenus illégaux, diffamatoires, haineux ou abusifs interdits.",
+      },
+      {
+        title: "Association",
+        body: "L'association d'une boîte est personnelle. Ne partage pas publiquement tes codes ou liens d'invitation.",
+      },
+      {
+        title: "Responsabilité",
+        body: "Service fourni en l'état. Techalchemy ne peut être tenue responsable des dommages indirects liés à une coupure réseau ou une mauvaise configuration.",
+      },
+      {
+        title: "Médiation",
+        body: "Droit français. Médiation CNPM ou plateforme européenne ODR en cas de litige.",
+      },
+      {
+        title: "Version complète",
+        body: TERMS_URL,
       },
     ],
   },
@@ -29,20 +51,40 @@ export const LEGAL_SECTIONS: Record<
     title: "Confidentialité",
     paragraphs: [
       {
-        title: "Collecte",
-        body: "Nous collectons les informations nécessaires à ton compte (e-mail, profil), à tes boîtes (identifiants, statut) et aux messages envoyés.",
+        title: "Responsable",
+        body: "Techalchemy (EI) — ZORLONI Maxime, directeur de publication. 31 Avenue du clos banderet, 74200 Thonon-les-Bains. SIRET 97746385000015.",
       },
       {
-        title: "Messages",
-        body: "Les messages sont stockés pour être délivrés à la boîte destinataire, puis conservés dans ton historique d'envoi.",
+        title: "Contact données",
+        body: "support@boite-a-coeur.fr",
+      },
+      {
+        title: "Données traitées",
+        body: "Compte (e-mail, prénom, mot de passe haché, OAuth), messages BACM et métadonnées, boîtes associées, télémétrie technique des boîtes, jeton de session local, journaux de sécurité.",
+      },
+      {
+        title: "Non collecté",
+        body: "Pas de GPS stocké, pas d'audio, pas de vente de données. Galerie : uniquement les médias que tu sélectionnes.",
+      },
+      {
+        title: "Hébergement",
+        body: "Données hébergées en France (PulseHeberg SAS, Toulon).",
+      },
+      {
+        title: "Durée",
+        body: "Compte tant qu'il est actif. Messages selon leur cycle de vie (éphémères supprimés après ouverture). Journaux techniques : durée limitée.",
       },
       {
         title: "Tes droits",
-        body: "Tu peux demander la suppression de ton compte et dissocier tes boîtes depuis l'application.",
+        body: "Accès, rectification, effacement, limitation, portabilité, opposition, retrait du consentement. Réclamation possible auprès de la CNIL.",
       },
       {
-        title: "Partage",
-        body: "Nous ne vendons pas tes données. Les prestataires techniques traitent des données limitées pour fournir le service.",
+        title: "Mes données",
+        body: "Téléchargement, suppression des données ou suppression du compte : " + DELETE_ACCOUNT_URL,
+      },
+      {
+        title: "Version complète",
+        body: PRIVACY_POLICY_URL,
       },
     ],
   },
@@ -51,13 +93,23 @@ export const LEGAL_SECTIONS: Record<
     paragraphs: [
       {
         title: "Éditeur",
-        body: "TechAlchemy - application Boîte à cœur, service de messagerie affective entre boîtes connectées.",
+        body: "Techalchemy — Entrepreneur individuel. 31 Avenue du clos banderet, 74200 Thonon-les-Bains, France. SIRET 97746385000015. RCS 977 463 850 R.C.S. Tarascon. TVA FR82977463850.",
       },
-      { title: "Contact", body: "support@boite-a-coeur.techalchemy.fr" },
-      { title: "Hébergement", body: "Infrastructure TechAlchemy, Union européenne." },
       {
-        title: "Données",
-        body: "Les données techniques nécessaires au fonctionnement sont traitées conformément à la politique de confidentialité.",
+        title: "Directeur de publication",
+        body: "ZORLONI Maxime",
+      },
+      {
+        title: "Hébergeur",
+        body: "PulseHeberg SAS — 9 Boulevard de Strasbourg, 83000 Toulon. SIRET 824 070 619 00039.",
+      },
+      {
+        title: "Contact",
+        body: "support@boite-a-coeur.fr — boite-a-coeur.fr",
+      },
+      {
+        title: "Version complète",
+        body: LEGAL_NOTICE_URL,
       },
     ],
   },
