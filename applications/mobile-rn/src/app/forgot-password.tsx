@@ -4,7 +4,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { AppText, Button, Card, Screen, TextField } from "@/components/ui";
 import { requestPasswordReset } from "@/data/api/ApiClient";
-import { ApiException } from "@/data/api/errors";
+import { userFacingError } from "@/data/api/errors";
 import { useAppStore } from "@/store/appStore";
 import { colors, spacing } from "@/theme/theme";
 
@@ -26,7 +26,7 @@ export default function ForgotPasswordScreen() {
       await requestPasswordReset(email);
       setSent(true);
     } catch (e) {
-      showSnackbar(e instanceof ApiException ? e.message : "Erreur réseau, réessayez.");
+      showSnackbar(userFacingError(e, "Erreur réseau, réessayez."));
     } finally {
       setBusy(false);
     }
@@ -41,19 +41,18 @@ export default function ForgotPasswordScreen() {
               <Ionicons name="mail-open" size={28} color={colors.rosePrimary} />
             </View>
             <AppText variant="titleMedium" center>
-              Vérifiez vos e-mails
+              Vérifie tes e-mails
             </AppText>
             <AppText variant="bodyMedium" muted center>
               Si un compte existe pour {email}, un lien de réinitialisation vient d&apos;être envoyé.
-              Pensez à regarder dans vos spams.
+              Pense à regarder dans tes spams.
             </AppText>
             <Button label="Revenir à la connexion" onPress={() => router.back()} />
           </Card>
         ) : (
           <Card>
             <AppText variant="bodyMedium" muted>
-              Entrez votre adresse e-mail : nous vous enverrons un lien pour choisir un nouveau mot
-              de passe.
+              Entre ton adresse e-mail : nous t&apos;enverrons un lien pour choisir un nouveau mot de passe.
             </AppText>
             <TextField
               label="Adresse e-mail"
@@ -63,6 +62,7 @@ export default function ForgotPasswordScreen() {
               keyboardType="email-address"
               autoComplete="email"
             />
+            <View style={styles.spacer} />
             <Button
               label="Envoyer le lien"
               onPress={submit}
@@ -84,5 +84,8 @@ const styles = StyleSheet.create({
   sentIcon: {
     alignSelf: "center",
     marginBottom: spacing.xs,
+  },
+  spacer: {
+    height: spacing.md,
   },
 });
