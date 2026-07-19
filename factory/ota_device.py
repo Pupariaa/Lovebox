@@ -29,7 +29,7 @@ def api_request(method: str, url: str, admin_key: str, body: dict | None = None)
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Enqueue OTA for one device (admin API)")
-    parser.add_argument("--base-url", default=os.environ.get("BAC_API_URL", "https://boite-a-coeur.techalchemy.fr"))
+    parser.add_argument("--base-url", default=os.environ.get("BAC_API_URL", "https://boite-a-coeur.fr"))
     parser.add_argument("--admin-key", default=os.environ.get("OTA_ADMIN_KEY", ""))
     parser.add_argument("--serial", help="Device serial number")
     parser.add_argument("--uuid", help="Device uuid")
