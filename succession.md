@@ -158,7 +158,7 @@ framePacer.wait()
 | `BacTouch.h` | Touch + log debug |
 | `BacScreenCache.h` | Pre-render écrans lourds |
 | `BacTimeSync.h` | NTP après setup |
-| `BacMessageStore.h` | Parse BACM v1, stockage PSRAM (max 2 MB, 1 message) |
+| `BacMessageStore.h` | Parse BACM v1, stockage PSRAM (max 3 MB, 1 message) |
 | `BacMessageRenderer.h` | Draw message (bg + layers + anim) |
 | `BacMessageServer.h` | HTTP :8080 — `/info`, `/ping`, `POST /message` |
 | `BacScreens.h` | Écran dynamique `message_opened` (hors export Studio) |
@@ -248,7 +248,7 @@ Noms logiques (utilisés dans `BacApp` par string) :
 | `lost_connection` | WiFi perdu |
 | `new_message` | Notification message |
 | `message_opened` | **dynamique** (`BacScreens.h`), pas dans Studio |
-| `settings_*` | Réglages (typos préservées : `settings_fatory_reseting`) |
+| `settings_*` | Réglages (dont `settings_factory_reseting`) |
 
 Symboles C++ : `screen_scr_mq…` — grep `Screen("` dans `Projet.h`.
 
