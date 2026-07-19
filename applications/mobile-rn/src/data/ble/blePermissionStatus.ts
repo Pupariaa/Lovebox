@@ -1,6 +1,5 @@
 import { BleManager, State } from "react-native-ble-plx";
 import { Linking, PermissionsAndroid, Platform } from "react-native";
-import { requestBluetoothPermissions } from "./permissions";
 
 export type BleAccessState =
   | "ready"
@@ -70,12 +69,46 @@ async function checkBluetoothPoweredOn(): Promise<boolean> {
   }
 }
 
+async function waitForBleState(timeoutMs = 4000): Promise<State> {
+  const bleManager = getManager();
+  const current = await bleManager.state();
+  if (current !== State.Unknown && current !== State.Resetting) return current;
+  return new Promise<State>((resolve) => {
+    const timer = setTimeout(() => {
+      subscription.remove();
+      resolve(current);
+    }, timeoutMs);
+    const subscription = bleManager.onStateChange((next) => {
+      if (next !== State.Unknown && next !== State.Resetting) {
+        clearTimeout(timer);
+        subscription.remove();
+        resolve(next);
+      }
+    }, true);
+  });
+}
+
+function iosStateToAccess(state: State): BleAccessStatus {
+  switch (state) {
+    case State.PoweredOn:
+      return { state: "ready", canScan: true };
+    case State.Unauthorized:
+      return { state: "permission_blocked", canScan: false };
+    case State.PoweredOff:
+      return { state: "bluetooth_off", canScan: false };
+    default:
+      return { state: "bluetooth_off", canScan: false };
+  }
+}
+
 export async function getBleAccessStatus(): Promise<BleAccessStatus> {
-  if (Platform.OS === "android") {
-    const perm = await checkAndroidPermissions();
-    if (perm !== "ready") {
-      return { state: perm, canScan: false };
-    }
+  if (Platform.OS === "ios") {
+    return iosStateToAccess(await waitForBleState());
+  }
+
+  const perm = await checkAndroidPermissions();
+  if (perm !== "ready") {
+    return { state: perm, canScan: false };
   }
 
   const poweredOn = await checkBluetoothPoweredOn();
@@ -87,19 +120,16 @@ export async function getBleAccessStatus(): Promise<BleAccessStatus> {
 }
 
 export async function ensureBleAccess(): Promise<BleAccessStatus> {
-  if (Platform.OS === "android") {
-    let perm = await checkAndroidPermissions();
-    if (perm !== "ready") {
-      perm = await requestAndroidPermissionsDetailed();
-    }
-    if (perm !== "ready") {
-      return { state: perm, canScan: false };
-    }
-  } else {
-    const granted = await requestBluetoothPermissions();
-    if (!granted) {
-      return { state: "permission_denied", canScan: false };
-    }
+  if (Platform.OS === "ios") {
+    return iosStateToAccess(await waitForBleState());
+  }
+
+  let perm = await checkAndroidPermissions();
+  if (perm !== "ready") {
+    perm = await requestAndroidPermissionsDetailed();
+  }
+  if (perm !== "ready") {
+    return { state: perm, canScan: false };
   }
 
   const poweredOn = await checkBluetoothPoweredOn();
