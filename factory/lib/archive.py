@@ -23,6 +23,7 @@ def archive_provision(
     port: str,
     artifacts: dict[str, Path],
     user_txt_content: str,
+    mode: str | None = None,
 ) -> Path:
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     out_dir = ARCHIVES_DIR / serial / ts
@@ -44,6 +45,7 @@ def archive_provision(
         "device_name": identity.get("device_name"),
         "uuid": identity.get("uuid"),
         "firmware_version": version,
+        "provision_mode": mode or "full",
         "provisioned_at": ts,
         "port": port,
         "fqbn": "esp32:esp32:esp32s3:app3M_fat9M_16MB",
