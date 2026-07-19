@@ -16,7 +16,7 @@ import {
   wifiSsidStatusMessage,
   type WifiSsidStatus,
 } from "@/domain/wifi/wifiCurrent";
-import { BleProvisionPhase, useAppStore } from "@/store/appStore";
+import { BleProvisionPhase, useAppStore, useLoading } from "@/store/appStore";
 import { colors, spacing } from "@/theme/theme";
 
 type Step = "scan" | "credentials" | "provisioning" | "result";
@@ -38,10 +38,12 @@ const PHASE_ORDER: BleProvisionPhase[] = [
 
 export default function BleScreen() {
   const router = useRouter();
-  const loading = useAppStore((s) => s.loading);
+  const scanning = useLoading("scan");
+  const claiming = useLoading("claim");
   const bleDevices = useAppStore((s) => s.bleDevices);
   const scanBle = useAppStore((s) => s.scanBle);
   const provisionBle = useAppStore((s) => s.provisionBle);
+  const cancelBleProvision = useAppStore((s) => s.cancelBleProvision);
   const resetBleProvision = useAppStore((s) => s.resetBleProvision);
   const retryClaim = useAppStore((s) => s.retryClaimAfterProvision);
   const phase = useAppStore((s) => s.bleProvisionPhase);
@@ -99,7 +101,19 @@ export default function BleScreen() {
     if (ok) showSnackbar("Boîte associée.");
   };
 
+  const cancelProvision = async () => {
+    await cancelBleProvision();
+    setStep("scan");
+    showSnackbar("Configuration annulée.");
+    void refreshBleAccess(false);
+  };
+
   const activePhaseIndex = PHASE_ORDER.indexOf(phase);
+  const isCancellablePhase =
+    phase === BleProvisionPhase.Connecting ||
+    phase === BleProvisionPhase.SendingWifi ||
+    phase === BleProvisionPhase.WaitingForBox ||
+    phase === BleProvisionPhase.LinkingAccount;
 
   return (
     <Screen
@@ -118,19 +132,19 @@ export default function BleScreen() {
                 <BlePermissionCard
                   state={bleAccess}
                   onRetry={() => void refreshBleAccess(true)}
-                  loading={loading}
+                  loading={scanning}
                 />
               ) : (
                 <Button
-                  label={loading ? "Recherche..." : "Rechercher"}
+                  label={scanning ? "Recherche..." : "Rechercher"}
                   onPress={scanBle}
-                  loading={loading}
+                  loading={scanning}
                   icon={<Ionicons name="search" size={16} color={colors.onPrimary} />}
                 />
               )}
             </Card>
 
-            {bleAccess === "ready" && !loading && bleDevices.length === 0 ? (
+            {bleAccess === "ready" && !scanning && bleDevices.length === 0 ? (
               <Card>
                 <AppText variant="bodyMedium" muted center>
                   Aucune boîte trouvée. Vérifie que ta boîte est en mode configuration et proche de ton téléphone.
@@ -238,6 +252,11 @@ export default function BleScreen() {
                 );
               })}
             </View>
+            {isCancellablePhase ? (
+              <View style={styles.cancelWrap}>
+                <Button label="Annuler" variant="secondary" onPress={cancelProvision} />
+              </View>
+            ) : null}
           </Card>
         ) : null}
 
@@ -268,7 +287,7 @@ export default function BleScreen() {
                   {provisionError ?? "Une erreur est survenue."}
                 </AppText>
                 {wifiProvisioned ? (
-                  <Button label="Réessayer l'association" onPress={retry} loading={loading} />
+                  <Button label="Réessayer l'association" onPress={retry} loading={claiming} />
                 ) : (
                   <Button
                     label="Recommencer"
@@ -336,5 +355,8 @@ const styles = StyleSheet.create({
   wifiHint: {
     gap: spacing.sm,
     marginBottom: spacing.md,
+  },
+  cancelWrap: {
+    marginTop: spacing.lg,
   },
 });
