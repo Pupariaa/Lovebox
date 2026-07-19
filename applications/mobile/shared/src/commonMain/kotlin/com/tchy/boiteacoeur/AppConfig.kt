@@ -9,7 +9,4 @@ object AppConfig {
     const val BLE_CONFIG_CHAR_UUID = "bac1c205-36e1-4688-b7f5-ea07361b26a8"
     const val MSG_WIDTH = 280
     const val MSG_HEIGHT = 240
-
-    const val DEV_WIFI_SSID = "freebox_MAISON"
-    const val DEV_WIFI_PASSWORD = "2cc23402B"
 }
