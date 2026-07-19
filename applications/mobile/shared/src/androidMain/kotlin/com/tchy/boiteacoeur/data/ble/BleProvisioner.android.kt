@@ -1,6 +1,7 @@
 package com.tchy.boiteacoeur.data.ble
 
 import android.bluetooth.le.ScanSettings
+import android.util.Log
 import com.juul.kable.Advertisement
 import com.juul.kable.Peripheral
 import com.juul.kable.Scanner
@@ -72,7 +73,8 @@ actual class BleProvisioner actual constructor() {
                     advertisements[address] = ad
                 }
             }
-        } catch (_: TimeoutCancellationException) {
+        } catch (timeout: TimeoutCancellationException) {
+            Log.d(TAG, "BLE scan window ended after ${timeoutMs}ms", timeout)
         }
         return found.values.sortedBy { it.name.lowercase() }
     }
@@ -107,7 +109,8 @@ actual class BleProvisioner actual constructor() {
         if (payload.size > 191) throw IllegalArgumentException("payload too large")
         try {
             p.write(configCharacteristic, payload, WriteType.WithResponse)
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.w(TAG, "GATT config write with response failed, retrying without response", error)
             p.write(configCharacteristic, payload, WriteType.WithoutResponse)
         }
         delay(POST_WRITE_DELAY_MS)
@@ -213,7 +216,8 @@ actual class BleProvisioner actual constructor() {
         try {
             p.write(wifiCharacteristic, payload, WriteType.WithResponse)
             return
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.w(TAG, "GATT wifi write with response failed, retrying without response", error)
         }
         p.write(wifiCharacteristic, payload, WriteType.WithoutResponse)
     }
@@ -234,7 +238,8 @@ actual class BleProvisioner actual constructor() {
         if (p == null) return
         try {
             p.disconnect()
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.w(TAG, "GATT disconnect failed", error)
         }
     }
 
@@ -273,6 +278,7 @@ actual class BleProvisioner actual constructor() {
     }
 
     private companion object {
+        const val TAG = "BleProvisioner"
         const val DEFAULT_BLE_NAME = "BoiteACoeur"
         const val CONNECT_TIMEOUT_MS = 30_000L
         const val SCAN_REFRESH_MS = 8_000L
