@@ -770,4 +770,19 @@ git clone Lovebox.bundle Lovebox-restored
 
 ---
 
-*Document genere le 2026-07-19. Audit lecture seule — aucune correction appliquee dans ce rapport.*
+## 11.4 Statut de remediation
+
+Correctifs appliques le 2026-07-19 sur l'ensemble des findings des sections 5 a 8 (backend, firmware, mobile-rn, KMP). Non compile / non deploye (build cote utilisateur).
+
+Actions manuelles requises cote utilisateur :
+
+- `web/backend` : appliquer la migration `migrations/011_oauth_exchange_codes.sql`, lancer `composer install`, definir les nouvelles variables d'env (`JWT_ISSUER`, `JWT_AUDIENCE`, `REQUIRE_EMAIL_VERIFICATION`, `CORS_ALLOWED_ORIGINS`, `TRUSTED_PROXIES`, `ADMIN_API_KEY`, `USB_DEBUG_TOKEN_SECRET`, `USB_DEBUG_TOKEN_TTL`, `LONG_POLL_MAX_SECONDS`).
+- `applications/mobile` (KMP) : `androidx.security:security-crypto` ajoute a `libs.versions.toml` + `shared/build.gradle.kts` — resync gradle.
+- OAuth : le flux web bascule sur un code d'echange one-shot (`?code=` + `POST /auth/oauth/exchange`). Backend et mobile-rn sont alignes ; deployer conjointement.
+- Firmware : le rollback A/B ne se confirme qu'apres smoke test (WiFi + FFAT + frame rendue + stabilite) ; verifier que le rollback est active au bootloader.
+
+Choix d'architecture notables : E-01/E-02 durcis sans challenge cryptographique (l'app ne connait pas le device_secret) ; E-11 api_secret isole dans un namespace NVS dedie (chiffrement materiel non activable en pur firmware) ; E-K01 boutons OAuth KMP desactives explicitement (feature absente de l'app legacy) ; E-K02 deep links invite retires (endpoint backend inexistant).
+
+---
+
+*Document genere le 2026-07-19. Findings identifies en audit lecture seule ; correctifs appliques le meme jour (voir 11.4).*
