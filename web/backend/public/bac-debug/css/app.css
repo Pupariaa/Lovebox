@@ -1082,6 +1082,140 @@ body {
   }
 }
 
+.panel-live {
+  border: 1px solid var(--line);
+  background: linear-gradient(165deg, rgba(255, 255, 255, 0.96), rgba(255, 245, 248, 0.92));
+  box-shadow: var(--shadow);
+}
+
+.panel-live.is-visible {
+  display: block;
+}
+
+.live-head {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  gap: 16px;
+  align-items: center;
+  margin-bottom: 18px;
+}
+
+.live-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  display: grid;
+  place-items: center;
+  color: var(--rose);
+  background: rgba(232, 93, 117, 0.1);
+  border: 1px solid rgba(232, 93, 117, 0.22);
+}
+
+.live-icon svg {
+  width: 28px;
+  height: 28px;
+}
+
+.live-head-copy h2 {
+  margin: 4px 0 0;
+  font-family: var(--font-display);
+  font-size: clamp(1.25rem, 2.2vw, 1.5rem);
+}
+
+.live-phase {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.live-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.live-stat {
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  border: 1px solid var(--line);
+}
+
+.live-stat-k {
+  display: block;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.live-stat-v {
+  display: block;
+  font-weight: 700;
+  font-size: 0.95rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.live-feed {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.live-feed li {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line);
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.live-feed li:last-child {
+  border-bottom: 0;
+}
+
+.live-feed li.is-ok {
+  color: var(--ok);
+}
+
+.live-feed li.is-warn {
+  color: #9a6b00;
+}
+
+.live-feed li.is-err {
+  color: var(--fail);
+}
+
+.live-feed li.is-work {
+  color: var(--lavender);
+}
+
+.live-feed time {
+  display: inline-block;
+  min-width: 4.5em;
+  margin-right: 8px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.progress-metrics {
+  margin: 8px 0 0;
+  font-size: 0.88rem;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 720px) {
+  .live-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
