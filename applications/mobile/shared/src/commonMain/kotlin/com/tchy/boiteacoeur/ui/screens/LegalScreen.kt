@@ -103,7 +103,7 @@ private val LEGAL_PARAGRAPHS = listOf(
     ),
     LegalParagraph(
         "Contact",
-        "support@boite-a-coeur.techalchemy.fr",
+        "support@boite-a-coeur.fr",
     ),
     LegalParagraph(
         "Hébergement",
