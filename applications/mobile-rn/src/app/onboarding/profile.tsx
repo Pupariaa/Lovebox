@@ -2,14 +2,15 @@ import { useState } from "react";
 import { ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { AppText, Button, Card, Screen, TextField } from "@/components/ui";
-import { useAppStore } from "@/store/appStore";
+import { useAppStore, useLoading } from "@/store/appStore";
 import { spacing } from "@/theme/theme";
 
 export default function OnboardingProfileScreen() {
   const router = useRouter();
   const userProfile = useAppStore((s) => s.userProfile);
   const updateUserProfile = useAppStore((s) => s.updateUserProfile);
-  const loading = useAppStore((s) => s.loading);
+  const logout = useAppStore((s) => s.logout);
+  const loading = useLoading("profile");
 
   const [firstName, setFirstName] = useState(userProfile?.first_name ?? "");
 
@@ -19,6 +20,11 @@ export default function OnboardingProfileScreen() {
     if (!valid) return;
     const ok = await updateUserProfile({ firstName: firstName.trim() });
     if (ok) router.replace("/(tabs)/home");
+  };
+
+  const onLogout = async () => {
+    await logout();
+    router.replace("/auth");
   };
 
   return (
@@ -47,6 +53,12 @@ export default function OnboardingProfileScreen() {
             style={styles.continue}
           />
         </Card>
+        <Button
+          label="Se déconnecter"
+          variant="ghost"
+          onPress={onLogout}
+          disabled={loading}
+        />
       </ScrollView>
     </Screen>
   );
