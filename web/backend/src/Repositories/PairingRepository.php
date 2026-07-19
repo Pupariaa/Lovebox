@@ -48,14 +48,29 @@ final class PairingRepository
     {
         $stmt = $this->pdo->prepare(
             "SELECT p.*, d.device_name, d.display_name, d.uuid AS target_uuid, d.serial_number,
-                    d.last_seen_at, d.firmware_version
+                    d.last_seen_at, d.firmware_version, ou.first_name AS owner_first_name
              FROM pairings p
              JOIN devices d ON d.id = p.target_device_id
+             LEFT JOIN users ou ON ou.id = d.owner_user_id
              WHERE p.sender_user_id = :uid AND p.status = 'active'
              ORDER BY p.created_at ASC"
         );
         $stmt->execute(['uid' => $userId]);
         return $stmt->fetchAll();
+    }
+
+    public function setAlias(int $pairingId, int $userId, ?string $alias): bool
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE pairings SET alias = :alias
+             WHERE id = :id AND sender_user_id = :uid AND status = 'active'"
+        );
+        $stmt->execute([
+            'alias' => $alias !== null && $alias !== '' ? $alias : null,
+            'id' => $pairingId,
+            'uid' => $userId,
+        ]);
+        return $stmt->rowCount() > 0;
     }
 
     public function findActiveBySenderAndTarget(int $userId, int $targetDeviceId): ?array
@@ -128,6 +143,14 @@ final class PairingRepository
         );
         $stmt->execute(['id' => $pairingId, 'uid' => $userId]);
         return $stmt->rowCount() > 0;
+    }
+
+    public function clearAliasesForSender(int $userId): void
+    {
+        $stmt = $this->pdo->prepare(
+            "UPDATE pairings SET alias = NULL WHERE sender_user_id = :uid AND status = 'active'"
+        );
+        $stmt->execute(['uid' => $userId]);
     }
 
     public function createPairingCode(string $code, int $userId, int $deviceId, int $ttlSeconds): void
