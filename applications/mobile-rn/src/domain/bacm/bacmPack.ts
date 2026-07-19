@@ -1,11 +1,70 @@
+import { AlphaType, ColorType, Skia, type SkImage } from "@shopify/react-native-skia";
 import { AppConfig } from "@/config/AppConfig";
 import { compositeIconOnBgCopy, cropRect } from "./composite";
 import { loadEmoji } from "./emojiFrameLoader";
 import { ensureFontsLoaded } from "./font";
 import type { IconFrameData } from "./frame";
 import { loadSkImage } from "./imageLoader";
+import { rgb888To565 } from "./rgb565";
+import { makeSkImageFromFrame } from "./scenePreview";
 import { SceneRasterizer } from "./sceneRasterizer";
 import type { MessageScene } from "./scene";
+import { hasEmoji, segmentEmojiText, twemojiRefToCodePoints, twemojiUrl } from "./twemoji";
+
+// Bakes rotation into an animated icon frame (device receives pre-rendered pixels). Rotation is
+// applied about the frame center within the same square, matching the static bake behaviour.
+function rotateIconFrame(frame: IconFrameData, deg: number): IconFrameData {
+  const rot = ((deg % 360) + 360) % 360;
+  if (!rot) return frame;
+  const src = makeSkImageFromFrame(frame);
+  if (!src) return frame;
+  const side = frame.side;
+  const surface = Skia.Surface.MakeOffscreen(side, side);
+  if (!surface) return frame;
+  const canvas = surface.getCanvas();
+  const paint = Skia.Paint();
+  paint.setAntiAlias(true);
+  canvas.rotate(rot, side / 2, side / 2);
+  canvas.drawImageRect(
+    src,
+    Skia.XYWHRect(0, 0, side, side),
+    Skia.XYWHRect(0, 0, side, side),
+    paint,
+  );
+  surface.flush();
+  const snapshot = surface.makeImageSnapshot();
+  const rgba = snapshot.readPixels(0, 0, {
+    width: side,
+    height: side,
+    colorType: ColorType.RGBA_8888,
+    alphaType: AlphaType.Unpremul,
+  }) as Uint8Array | null;
+  if (!rgba) return frame;
+  const pixels = new Uint16Array(side * side);
+  const alpha = new Uint8Array(side * side);
+  for (let i = 0; i < side * side; i++) {
+    const o = i * 4;
+    pixels[i] = rgb888To565(rgba[o], rgba[o + 1], rgba[o + 2]);
+    alpha[i] = rgba[o + 3];
+  }
+  return { side, pixels, alpha };
+}
+
+async function loadTextEmojiImages(text: string): Promise<Map<string, SkImage>> {
+  const map = new Map<string, SkImage>();
+  if (!text || !hasEmoji(text)) return map;
+  const refs = new Set<string>();
+  for (const seg of segmentEmojiText(text)) {
+    if (seg.kind === "emoji") refs.add(seg.ref);
+  }
+  await Promise.all(
+    Array.from(refs).map(async (ref) => {
+      const image = await loadSkImage(twemojiUrl(twemojiRefToCodePoints(ref)));
+      if (image) map.set(ref, image);
+    }),
+  );
+  return map;
+}
 
 export const LAYER_STATIC = 0;
 export const LAYER_ANIM = 1;
@@ -20,6 +79,46 @@ type AnimLayer = {
   frameCount: number;
   data: Uint16Array;
 };
+
+type AnimSpec = {
+  layer: MessageScene["layers"][number];
+  frames: IconFrameData[];
+  fps: number;
+};
+
+// Picks n evenly-spaced frames from a sequence (keeps first and last).
+function sampleFrames(frames: IconFrameData[], n: number): IconFrameData[] {
+  if (n >= frames.length) return frames;
+  if (n <= 1) return [frames[0]];
+  const out: IconFrameData[] = [];
+  for (let i = 0; i < n; i++) {
+    out.push(frames[Math.round((i * (frames.length - 1)) / (n - 1))]);
+  }
+  return out;
+}
+
+// Guarantees the packed message fits the firmware buffer (MSG_MAX_BYTES). Animated layers are the
+// only variable-size part, so when the total would overflow we scale every animated layer's frame
+// count down proportionally and lower its fps to preserve the original playback duration.
+function fitAnimLayers(bg: Uint16Array, specs: AnimSpec[]): AnimLayer[] {
+  if (specs.length === 0) return [];
+  const overhead = 12 + specs.length * 16;
+  const bgBytes = bg.length * 2;
+  const available = AppConfig.MSG_MAX_BYTES - overhead - bgBytes;
+  let totalAnim = 0;
+  for (const s of specs) {
+    totalAnim += s.layer.size * s.layer.size * 2 * s.frames.length;
+  }
+  const factor = totalAnim > available && totalAnim > 0 ? available / totalAnim : 1;
+  return specs.map((s) => {
+    const full = s.frames.length;
+    let fc = full;
+    if (factor < 1) fc = Math.max(2, Math.floor(full * factor));
+    const frames = fc < full ? sampleFrames(s.frames, fc) : s.frames;
+    const fps = fc < full ? Math.max(2, Math.round((s.fps * fc) / full)) : s.fps;
+    return buildAnimLayer(bg, s.layer, frames, fps);
+  });
+}
 
 function buildAnimLayer(
   bg: Uint16Array,
@@ -62,12 +161,13 @@ export async function buildFromScene(scene: MessageScene): Promise<Uint8Array> {
       ? await loadSkImage(scene.bgImageUri)
       : null;
   const bg = rasterizer.rasterBackground(scene, bgImage);
-  const layers: AnimLayer[] = [];
+  const animSpecs: AnimSpec[] = [];
 
   for (const layer of scene.layers) {
     if (layer.hidden) continue;
     if (layer.type === "text") {
-      rasterizer.bakeText(bg, layer);
+      const emojiImages = await loadTextEmojiImages(layer.text ?? "");
+      rasterizer.bakeText(bg, layer, emojiImages);
     } else if (layer.type === "photo") {
       if (layer.imageUri) {
         const image = await loadSkImage(layer.imageUri);
@@ -77,7 +177,10 @@ export async function buildFromScene(scene: MessageScene): Promise<Uint8Array> {
       const emoji = await loadEmoji(layer.ref, layer.size);
       if (emoji && emoji.frames.length > 0) {
         if (layer.anim && emoji.animated && emoji.frames.length > 1) {
-          layers.push(buildAnimLayer(bg, layer, emoji.frames, emoji.fps));
+          const frames = layer.rotation
+            ? emoji.frames.map((f) => rotateIconFrame(f, layer.rotation))
+            : emoji.frames;
+          animSpecs.push({ layer, frames, fps: emoji.fps });
         } else {
           rasterizer.bakeIconFrame(bg, layer, emoji.frames[0]);
         }
@@ -85,6 +188,7 @@ export async function buildFromScene(scene: MessageScene): Promise<Uint8Array> {
     }
   }
 
+  const layers = fitAnimLayers(bg, animSpecs);
   return packMessage(bg, layers);
 }
 
