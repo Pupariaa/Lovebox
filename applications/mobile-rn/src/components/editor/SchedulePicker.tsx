@@ -63,7 +63,7 @@ export function SchedulePicker() {
         <View style={styles.flex}>
           <AppText variant="titleMedium">Programmer l&apos;envoi</AppText>
           <AppText variant="caption" muted>
-            {enabled ? "Le message partira à la date choisie" : "Envoi immédiat"}
+            {enabled ? "Le message partira à la date choisie." : "Envoi immédiat."}
           </AppText>
         </View>
         <Switch
