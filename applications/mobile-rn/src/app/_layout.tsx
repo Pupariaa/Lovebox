@@ -5,9 +5,11 @@ import { StatusBar } from "expo-status-bar";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useFonts } from "expo-font";
+import NetInfo from "@react-native-community/netinfo";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { OfflineBanner } from "@/components/OfflineBanner";
 import { AppText, Button, Snackbar } from "@/components/ui";
 import { ensureFontsLoaded, FONT_FAMILY_MAP } from "@/domain/bacm/font";
 import { useAppStore } from "@/store/appStore";
@@ -22,11 +24,20 @@ export default function RootLayout() {
   const bootstrap = useAppStore((s) => s.bootstrap);
   const snackbarMessage = useAppStore((s) => s.snackbarMessage);
   const clearSnackbar = useAppStore((s) => s.clearSnackbar);
+  const setNetworkOnline = useAppStore((s) => s.setNetworkOnline);
   const [fontsLoaded] = useFonts(FONT_FAMILY_MAP);
 
   useEffect(() => {
     WebBrowser.maybeCompleteAuthSession();
   }, []);
+
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener((state) => {
+      const online = state.isConnected === true && state.isInternetReachable !== false;
+      setNetworkOnline(online);
+    });
+    return () => unsubscribe();
+  }, [setNetworkOnline]);
 
   useEffect(() => {
     ensureFontsLoaded();
@@ -78,6 +89,7 @@ export default function RootLayout() {
       <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="light" />
+        <OfflineBanner />
         <Stack
           screenOptions={{
             headerShown: false,
@@ -94,8 +106,6 @@ export default function RootLayout() {
           <Stack.Screen name="(tabs)" />
           <Stack.Screen name="boxes" />
           <Stack.Screen name="ble" options={{ presentation: "card" }} />
-          <Stack.Screen name="settings" />
-          <Stack.Screen name="box-settings" />
           <Stack.Screen name="profile" />
           <Stack.Screen name="history" />
           <Stack.Screen name="received" />
