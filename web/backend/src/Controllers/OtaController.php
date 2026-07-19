@@ -14,6 +14,10 @@ use Psr\Http\Message\UploadedFileInterface;
 
 final class OtaController
 {
+    private const ESP32_IMAGE_MAGIC = 0xE9;
+    private const FIRMWARE_MIN_BYTES = 65536;
+    private const FIRMWARE_MAX_BYTES = 3145728;
+
     public function __construct(
         private OtaService $ota,
         private FirmwareReleaseRepository $releases
@@ -58,6 +62,11 @@ final class OtaController
         if ($firmwareSize === false || $firmwareSha === false) {
             return JsonResponse::error($response, 'firmware hash failed', 500);
         }
+        $binaryError = $this->validateEsp32Binary($firmwarePath, (int) $firmwareSize);
+        if ($binaryError !== null) {
+            @unlink($firmwarePath);
+            return JsonResponse::error($response, $binaryError, 400);
+        }
 
         $assetsFile = null;
         $assetsSha = null;
@@ -100,6 +109,26 @@ final class OtaController
             'ok' => true,
             'release' => $this->ota->formatRelease($this->releases->findById($id)),
         ], 201);
+    }
+
+    private function validateEsp32Binary(string $path, int $size): ?string
+    {
+        if ($size < self::FIRMWARE_MIN_BYTES) {
+            return 'firmware too small to be a valid ESP32 image';
+        }
+        if ($size > self::FIRMWARE_MAX_BYTES) {
+            return 'firmware exceeds the OTA partition size';
+        }
+        $fh = fopen($path, 'rb');
+        if ($fh === false) {
+            return 'firmware open failed';
+        }
+        $magic = fread($fh, 1);
+        fclose($fh);
+        if ($magic === false || strlen($magic) < 1 || ord($magic[0]) !== self::ESP32_IMAGE_MAGIC) {
+            return 'invalid ESP32 firmware image (bad magic byte)';
+        }
+        return null;
     }
 
     public function publish(Request $request, Response $response, array $args): Response
