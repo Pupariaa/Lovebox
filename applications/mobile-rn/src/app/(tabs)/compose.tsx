@@ -24,7 +24,7 @@ import { extractVideoToLayer, VideoModuleUnavailableError } from "@/domain/video
 import { measureTextBox } from "@/domain/bacm/sceneRasterizer";
 import { createLayer, type MessageLayer, type MessageScene } from "@/domain/bacm/scene";
 import { nextLayerId } from "@/domain/bacm/sceneGeometry";
-import { useAppStore } from "@/store/appStore";
+import { useAppStore, useLoading } from "@/store/appStore";
 import { colors, radius, spacing } from "@/theme/theme";
 import { targetLabel } from "@/util/formatters";
 
@@ -51,7 +51,7 @@ export default function ComposeScreen() {
   const linkedTargets = useAppStore((s) => s.linkedTargets);
   const selectedTargetIds = useAppStore((s) => s.selectedTargetIds);
   const toggleTargetId = useAppStore((s) => s.toggleTargetId);
-  const loading = useAppStore((s) => s.loading);
+  const loading = useLoading("send");
   const sendMessage = useAppStore((s) => s.sendMessage);
   const showSnackbar = useAppStore((s) => s.showSnackbar);
   const composerEphemeral = useAppStore((s) => s.composerEphemeral);
@@ -82,17 +82,24 @@ export default function ComposeScreen() {
 
   useEffect(() => {
     let cancelled = false;
-    ensureFontsLoaded().then(() => {
-      if (cancelled) return;
-      const current = useAppStore.getState().composerScene;
-      const layers = current.layers.map((l) =>
-        l.type === "text" ? fitTextLayer(l) : l,
-      );
-      useAppStore.getState().setComposerScene({ ...current, layers });
-    });
+    ensureFontsLoaded()
+      .then(() => {
+        if (cancelled) return;
+        const current = useAppStore.getState().composerScene;
+        const layers = current.layers.map((l) =>
+          l.type === "text" ? fitTextLayer(l) : l,
+        );
+        useAppStore.getState().setComposerScene({ ...current, layers });
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.warn("compose fonts load failed", error);
+        showSnackbar("Impossible de charger les polices. Réessaie plus tard.");
+      });
     return () => {
       cancelled = true;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const updateSelected = (patch: Partial<MessageLayer>) => {
