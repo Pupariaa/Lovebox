@@ -2,9 +2,20 @@ import { useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { BlePermissionCard } from "@/components/ble/BlePermissionCard";
 import { AppText, Button, Card, Screen, TextField } from "@/components/ui";
-import { AppConfig } from "@/config/AppConfig";
-import { requestBluetoothPermissions } from "@/data/ble/permissions";
+import { WifiQrScanner } from "@/components/wifi/WifiQrScanner";
+import {
+  ensureBleAccess,
+  type BleAccessState,
+} from "@/data/ble/blePermissionStatus";
+import {
+  getCurrentWifiSsid,
+  openAppSettings as openWifiSettings,
+  requestWifiSsidPermission,
+  wifiSsidStatusMessage,
+  type WifiSsidStatus,
+} from "@/domain/wifi/wifiCurrent";
 import { BleProvisionPhase, useAppStore } from "@/store/appStore";
 import { colors, spacing } from "@/theme/theme";
 
@@ -39,20 +50,38 @@ export default function BleScreen() {
   const showSnackbar = useAppStore((s) => s.showSnackbar);
 
   const [step, setStep] = useState<Step>("scan");
-  const [permission, setPermission] = useState<boolean | null>(null);
+  const [bleAccess, setBleAccess] = useState<BleAccessState>("ready");
+  const [wifiStatus, setWifiStatus] = useState<WifiSsidStatus>("ok");
   const [selected, setSelected] = useState<{ name: string; address: string } | null>(null);
-  const [ssid, setSsid] = useState<string>(AppConfig.DEV_WIFI_SSID);
-  const [password, setPassword] = useState<string>(AppConfig.DEV_WIFI_PASSWORD);
+  const [ssid, setSsid] = useState<string>("");
+  const [password, setPassword] = useState<string>("");
+  const [ssidPrefilled, setSsidPrefilled] = useState(false);
+  const [qrVisible, setQrVisible] = useState(false);
+
+  const refreshBleAccess = async (scanAfter = false) => {
+    const status = await ensureBleAccess();
+    setBleAccess(status.state);
+    if (status.canScan && scanAfter) void scanBle();
+    return status;
+  };
 
   useEffect(() => {
     resetBleProvision();
-    (async () => {
-      const granted = await requestBluetoothPermissions();
-      setPermission(granted);
-      if (granted) void scanBle();
-    })();
+    void refreshBleAccess(true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (step !== "credentials") return;
+    (async () => {
+      const { ssid: current, status } = await getCurrentWifiSsid();
+      setWifiStatus(status);
+      if (current) {
+        setSsid(current);
+        setSsidPrefilled(true);
+      }
+    })();
+  }, [step]);
 
   const startProvision = async () => {
     if (!selected) return;
@@ -60,14 +89,14 @@ export default function BleScreen() {
     const success = await provisionBle(selected.address, selected.name, ssid.trim(), password);
     setStep("result");
     if (!success) return;
-    showSnackbar("Boîte configurée");
+    showSnackbar("Boîte configurée.");
   };
 
   const retry = async () => {
     setStep("provisioning");
     const ok = await retryClaim();
     setStep("result");
-    if (ok) showSnackbar("Boîte associée");
+    if (ok) showSnackbar("Boîte associée.");
   };
 
   const activePhaseIndex = PHASE_ORDER.indexOf(phase);
@@ -83,16 +112,13 @@ export default function BleScreen() {
             <Card>
               <AppText variant="headlineMedium">Trouve ta boîte</AppText>
               <AppText variant="bodyMedium" muted style={styles.paragraph}>
-                Active le mode configuration sur ta boîte puis lance la recherche.
+                Active le mode configuration sur ta boîte, puis lance la recherche.
               </AppText>
-              {permission === false ? (
-                <Button
-                  label="Autoriser le Bluetooth"
-                  onPress={async () => {
-                    const granted = await requestBluetoothPermissions();
-                    setPermission(granted);
-                    if (granted) void scanBle();
-                  }}
+              {bleAccess !== "ready" ? (
+                <BlePermissionCard
+                  state={bleAccess}
+                  onRetry={() => void refreshBleAccess(true)}
+                  loading={loading}
                 />
               ) : (
                 <Button
@@ -103,6 +129,14 @@ export default function BleScreen() {
                 />
               )}
             </Card>
+
+            {bleAccess === "ready" && !loading && bleDevices.length === 0 ? (
+              <Card>
+                <AppText variant="bodyMedium" muted center>
+                  Aucune boîte trouvée. Vérifie que ta boîte est en mode configuration et proche de ton téléphone.
+                </AppText>
+              </Card>
+            ) : null}
 
             {bleDevices.map((device) => (
               <Card
@@ -133,10 +167,46 @@ export default function BleScreen() {
             <AppText variant="headlineMedium">Réseau WiFi</AppText>
             <AppText variant="bodyMedium" muted style={styles.paragraph}>
               Boîte sélectionnée : {selected?.name}. Le WiFi doit être en 2,4 GHz.
+              {ssidPrefilled ? " Le réseau actuel du téléphone a été pré-rempli." : ""}
             </AppText>
+            {!ssidPrefilled && wifiStatus !== "ok" ? (
+              <View style={styles.wifiHint}>
+                <AppText variant="caption" muted>
+                  {wifiSsidStatusMessage(wifiStatus)}
+                </AppText>
+                {wifiStatus === "location_denied" ? (
+                  <Button
+                    label="Autoriser la localisation"
+                    variant="secondary"
+                    onPress={async () => {
+                      const next = await requestWifiSsidPermission();
+                      setWifiStatus(next);
+                      if (next === "ok") {
+                        const { ssid: current, status } = await getCurrentWifiSsid();
+                        setWifiStatus(status);
+                        if (current) {
+                          setSsid(current);
+                          setSsidPrefilled(true);
+                        }
+                      }
+                    }}
+                  />
+                ) : null}
+                {wifiStatus === "location_blocked" ? (
+                  <Button label="Ouvrir les réglages" variant="secondary" onPress={openWifiSettings} />
+                ) : null}
+              </View>
+            ) : null}
             <TextField label="Nom du réseau (SSID)" value={ssid} onChangeText={setSsid} autoCapitalize="none" />
             <View style={styles.spacer} />
             <TextField label="Mot de passe" value={password} onChangeText={setPassword} secureToggle />
+            <View style={styles.spacer} />
+            <Button
+              label="Scanner le QR WiFi"
+              variant="secondary"
+              onPress={() => setQrVisible(true)}
+              icon={<Ionicons name="qr-code-outline" size={16} color={colors.rosePrimary} />}
+            />
             <View style={styles.spacer} />
             <Button label="Configurer" onPress={startProvision} disabled={!ssid.trim()} />
           </Card>
@@ -218,6 +288,16 @@ export default function BleScreen() {
           </Card>
         ) : null}
       </ScrollView>
+      <WifiQrScanner
+        visible={qrVisible}
+        onClose={() => setQrVisible(false)}
+        onScanned={({ ssid: scannedSsid, password: scannedPassword }) => {
+          setSsid(scannedSsid);
+          setPassword(scannedPassword);
+          setSsidPrefilled(false);
+          showSnackbar("QR WiFi lu.");
+        }}
+      />
     </Screen>
   );
 }
@@ -252,5 +332,9 @@ const styles = StyleSheet.create({
   resultCenter: {
     alignItems: "center",
     gap: spacing.md,
+  },
+  wifiHint: {
+    gap: spacing.sm,
+    marginBottom: spacing.md,
   },
 });
