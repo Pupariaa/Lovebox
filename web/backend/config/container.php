@@ -11,6 +11,7 @@ use Bac\Repositories\FirmwareReleaseRepository;
 use Bac\Repositories\MessageRepository;
 use Bac\Repositories\PairingRepository;
 use Bac\Repositories\UserRepository;
+use Bac\Services\AppleClientSecret;
 use Bac\Services\AuthService;
 use Bac\Services\BacmValidator;
 use Bac\Services\DeviceService;
@@ -57,13 +58,16 @@ return [
         );
     },
     EmailService::class => autowire(),
+    UserDataRightsService::class => autowire(),
     BacmValidator::class => autowire(),
     UserRepository::class => autowire(),
     DeviceRepository::class => autowire(),
+    DeletionRequestRepository::class => autowire(),
     DeviceCommandRepository::class => autowire(),
     FirmwareReleaseRepository::class => autowire(),
     PairingRepository::class => autowire(),
     MessageRepository::class => autowire(),
+    AppleClientSecret::class => autowire(),
     OAuthService::class => autowire(),
     JwtAuthMiddleware::class => autowire(),
     DeviceAuthMiddleware::class => autowire(),
