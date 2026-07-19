@@ -15,6 +15,12 @@ function finishFrenchSentence(text: string): string {
 
 export function mapApiError(message: string): string {
   const m = message.toLowerCase().trim();
+  if (m.includes("request timeout") || m.includes("timed out") || m.includes("timeout"))
+    return "Le serveur met trop de temps à répondre. Vérifie ta connexion et réessaie.";
+  if (m.includes("network request failed") || m.includes("network error"))
+    return "Connexion au serveur impossible. Vérifie ta connexion internet.";
+  if (m.includes("invalid server response"))
+    return "Réponse du serveur illisible. Réessaie dans un instant.";
   if (m.includes("non connect")) return "Non connecté.";
   if (m.includes("bluetooth desactiv")) return "Bluetooth désactivé.";
   if (m.includes("session expir")) return "Session expirée, reconnecte-toi.";
@@ -61,7 +67,8 @@ export function mapApiError(message: string): string {
   if (m.includes("oauth provider unknown")) return "Fournisseur OAuth inconnu.";
   if (m.includes("apple oauth not configured"))
     return "Connexion Apple indisponible.";
-  if (m.includes("missing oauth code")) return "Connexion OAuth interrompue. Réessaie.";
+  if (m.includes("missing oauth code") || m.includes("missing code"))
+    return "Connexion OAuth interrompue. Réessaie.";
   if (m.includes("device not claimed"))
     return "Cette boîte n'est pas encore associée à un compte.";
   if (m.includes("invalid action")) return "Action invalide.";
