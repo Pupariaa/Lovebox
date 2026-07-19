@@ -8,7 +8,7 @@
 
 class BacMessageStore {
 public:
-    static const uint32_t MAX_MESSAGE_BYTES = 2097152;
+    static const uint32_t MAX_MESSAGE_BYTES = 3145728;
     static const uint8_t LAYER_STATIC = 0;
     static const uint8_t LAYER_ANIM = 1;
 
