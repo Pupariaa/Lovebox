@@ -74,6 +74,6 @@ Permissions and native metadata are declared in `app.json`:
 
 ## Contracts
 
-The app targets `https://boite-a-coeur.techalchemy.fr` and reproduces the REST,
+The app targets `https://boite-a-coeur.fr` and reproduces the REST,
 BLE (service `bac1c201-...`) and BACM v1 binary contracts of the firmware and
 backend. Do not change these without updating the device/backend.
