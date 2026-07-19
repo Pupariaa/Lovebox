@@ -7,7 +7,7 @@ namespace Bac\Services;
 final class BacmValidator
 {
     private const MAGIC = "BACM";
-    private const MAX_SIZE = 2097152;
+    private const MAX_SIZE = 3145728;
     private const EXPECTED_W = 280;
     private const EXPECTED_H = 240;
 
