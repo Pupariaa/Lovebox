@@ -10,6 +10,8 @@ use Bac\Support\TokenUtil;
 
 final class DeviceService
 {
+    private const DEVICE_LOCALES = ['fr', 'en', 'it', 'de', 'pt', 'es'];
+
     public function __construct(
         private DeviceRepository $devices,
         private DeviceCommandRepository $commands,
@@ -51,6 +53,9 @@ final class DeviceService
                 } else {
                     throw new \InvalidArgumentException('invalid device secret');
                 }
+            } elseif (empty($existing['secret_hash']) && strcasecmp((string) $existing['serial_number'], $serial) === 0) {
+                // Secret was revoked (e.g. after unclaim); re-issue a fresh one for this box.
+                $newSecretPlain = TokenUtil::randomHex(32);
             }
             $update = [
                 'uuid' => $uuid,
@@ -171,18 +176,34 @@ final class DeviceService
         if (isset($fields['region_override'])) {
             $update['region_override'] = substr(trim((string) $fields['region_override']), 0, 16);
         }
+        if (isset($fields['locale'])) {
+            $update['locale'] = $this->normalizeDeviceLocale((string) $fields['locale']);
+        }
+        $configPayload = [];
+        if (isset($fields['backlight_level'])) {
+            $configPayload['backlight_level'] = max(0, min(100, (int) $fields['backlight_level']));
+        }
+        if (isset($fields['sleep_timeout_s'])) {
+            $configPayload['sleep_timeout_s'] = max(5, min(600, (int) $fields['sleep_timeout_s']));
+        }
+        if (array_key_exists('display_sleep_enabled', $fields)) {
+            $configPayload['display_sleep_enabled'] = filter_var($fields['display_sleep_enabled'], FILTER_VALIDATE_BOOLEAN);
+        }
         if ($update !== []) {
             $this->devices->update((int) $device['id'], $update);
-            $payload = [];
             if (isset($update['display_name'])) {
-                $payload['display_name'] = $update['display_name'];
+                $configPayload['display_name'] = $update['display_name'];
             }
             if (isset($update['region_override'])) {
-                $payload['region'] = $update['region_override'];
+                $configPayload['region'] = $update['region_override'];
             }
-            if ($payload !== []) {
-                $this->commands->enqueue((int) $device['id'], 'config', $payload);
+            if (isset($update['locale'])) {
+                $configPayload['locale'] = $update['locale'];
             }
+        }
+        if ($configPayload !== []) {
+            $this->commands->cancelOpenType((int) $device['id'], 'config');
+            $this->commands->enqueue((int) $device['id'], 'config', $configPayload);
         }
         return $this->formatDevice($this->devices->findById((int) $device['id']));
     }
@@ -196,6 +217,31 @@ final class DeviceService
         if (!$this->devices->unclaim($deviceId, $userId)) {
             throw new \InvalidArgumentException('unclaim failed');
         }
+        // Rotate the device credential so a captured secret cannot keep authenticating after
+        // the box leaves this owner. The box re-registers and receives a fresh secret.
+        $this->devices->revokeSecret($deviceId);
+    }
+
+    // Full deletion of an owned device row. Cascades remove pairings, messages, logs and commands.
+    // A factory_reset command is enqueued first so the physical box wipes itself when it next polls.
+    public function deleteOwned(int $userId, int $deviceId): void
+    {
+        $device = $this->devices->findOwnedByUser($userId, $deviceId);
+        if (!$device) {
+            throw new \InvalidArgumentException('no owned device');
+        }
+        if (!$this->commands->hasPendingType($deviceId, 'factory_reset')) {
+            $this->commands->enqueue($deviceId, 'factory_reset', []);
+        }
+        if (!$this->devices->deleteOwned($deviceId, $userId)) {
+            throw new \InvalidArgumentException('delete failed');
+        }
+    }
+
+    // Device-initiated self-deletion (called by firmware at the end of an on-device factory reset).
+    public function deregister(array $device): void
+    {
+        $this->devices->deleteById((int) $device['id']);
     }
 
     public function formatDevice(?array $device): array
@@ -221,6 +267,8 @@ final class DeviceService
             'display_name' => $displayName,
             'serial_number' => $device['serial_number'],
             'region' => $device['region_override'] ?: $device['region'],
+            'region_override' => $device['region_override'] ?? '',
+            'locale' => $this->deviceLocale($device),
             'firmware_version' => $device['firmware_version'],
             'last_seen_at' => $lastSeen,
             'last_seen_seconds_ago' => $lastSeenSeconds,
@@ -243,5 +291,23 @@ final class DeviceService
             }
         }
         return 'XX';
+    }
+
+    private function normalizeDeviceLocale(string $raw): string
+    {
+        $locale = strtolower(substr(trim($raw), 0, 8));
+        if (!in_array($locale, self::DEVICE_LOCALES, true)) {
+            throw new \InvalidArgumentException('invalid locale');
+        }
+        return $locale;
+    }
+
+    private function deviceLocale(array $device): string
+    {
+        $locale = strtolower(trim((string) ($device['locale'] ?? '')));
+        if ($locale !== '' && in_array($locale, self::DEVICE_LOCALES, true)) {
+            return $locale;
+        }
+        return 'fr';
     }
 }
